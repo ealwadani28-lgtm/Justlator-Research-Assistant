@@ -1,4 +1,5 @@
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+import os
 
 class MyHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -8,6 +9,7 @@ class MyHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
 if __name__ == '__main__':
+    # Ensure the zip file is in the root directory
     server_address = ('0.0.0.0', 5000)
     httpd = HTTPServer(server_address, MyHandler)
     print(f"Serving on port 5000...")
