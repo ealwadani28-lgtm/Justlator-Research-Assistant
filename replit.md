@@ -1,11 +1,18 @@
 # Replit Justlator
 
 ## Overview
-A simple web application for translation (based on the provided HTML file).
+Justlator — a Translation Studies Research Assistant web app with AI-powered tools for academic researchers.
 
 ## Project Architecture
-- `Replit-Justlator-FinalFixed.html`: Main entry point (served as `index.html`).
+- `index.html`: Main app file (served as root). Contains the full React app, landing page, and all feature tabs.
+- `server.py`: Python HTTP server serving the app on port 5000.
+
+## Features
+- Knowledge Base with source management and Citation Generator (APA/MLA/Chicago)
+- AI Humanizer, Paper Writer, Similarity Checker
+- Seasonal theme switcher (Auto-Season mode)
+- Usage/cost meter
 
 ## Recent Changes
-- Initialized the project with the existing HTML file.
-- Configured a workflow to serve the application on port 5000.
+- Removed old backup file (Replit-Justlator-FinalFixed.html) — index.html is the single source of truth.
+- Added Citation Generator (Task #1) — Cite button on each source card.
