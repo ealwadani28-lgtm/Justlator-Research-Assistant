@@ -374,6 +374,17 @@
       const [text2, setText2] = useState('');
       const [similarityResult, setSimilarityResult] = useState('');
       
+      // Citation state
+      const [citeDropdown, setCiteDropdown] = useState(null);
+      const [copiedCitation, setCopiedCitation] = useState(null);
+
+      useEffect(() => {
+        if (!citeDropdown) return;
+        const handleClick = () => setCiteDropdown(null);
+        document.addEventListener('click', handleClick, true);
+        return () => document.removeEventListener('click', handleClick, true);
+      }, [citeDropdown]);
+
       // Usage tracking
       const [totalTokens, setTotalTokens] = useState(0);
       const [totalCost, setTotalCost] = useState(0);
@@ -532,6 +543,91 @@
 
       const copyToClipboard = (text) => {
         navigator.clipboard.writeText(text);
+      };
+
+      const formatCitation = (source, style) => {
+        const author = source.author || 'Unknown Author';
+        const title = source.title || 'Untitled';
+        const year = source.year || 'n.d.';
+        const type = source.type || 'article';
+
+        const formatAuthorAPA = (name) => {
+          const parts = name.trim().split(/\s+/);
+          if (parts.length === 1) return parts[0] + ',';
+          const last = parts[parts.length - 1];
+          const initials = parts.slice(0, parts.length - 1).map(p => p[0].toUpperCase() + '.').join(' ');
+          return `${last}, ${initials}`;
+        };
+
+        if (style === 'APA') {
+          const apaAuthor = formatAuthorAPA(author);
+          const typeLabel = type === 'book' ? `[Book]` : type === 'thesis' ? `[Doctoral dissertation]` : type === 'theory' ? `[Theoretical work]` : '';
+          return `${apaAuthor} (${year}). ${title}. ${typeLabel}`.trim().replace(/\.$/, '') + '.';
+        }
+
+        if (style === 'MLA') {
+          const parts = author.trim().split(/\s+/);
+          let mlaAuthor = author;
+          if (parts.length > 1) {
+            const last = parts[parts.length - 1];
+            const rest = parts.slice(0, parts.length - 1).join(' ');
+            mlaAuthor = `${last}, ${rest}`;
+          }
+          if (type === 'book') {
+            return `${mlaAuthor}. ${title}. ${year}.`;
+          } else if (type === 'thesis') {
+            return `${mlaAuthor}. "${title}." Diss., ${year}.`;
+          } else {
+            return `${mlaAuthor}. "${title}." ${year}.`;
+          }
+        }
+
+        if (style === 'Chicago') {
+          const parts = author.trim().split(/\s+/);
+          let chicagoAuthor = author;
+          if (parts.length > 1) {
+            const last = parts[parts.length - 1];
+            const rest = parts.slice(0, parts.length - 1).join(' ');
+            chicagoAuthor = `${last}, ${rest}`;
+          }
+          if (type === 'book') {
+            return `${chicagoAuthor}. ${title}. ${year}.`;
+          } else if (type === 'thesis') {
+            return `${chicagoAuthor}. "${title}." PhD diss., ${year}.`;
+          } else {
+            return `${chicagoAuthor}. "${title}." ${year}.`;
+          }
+        }
+
+        return '';
+      };
+
+      const copyCitation = (source, style) => {
+        const citation = formatCitation(source, style);
+        const finish = () => {
+          setCopiedCitation(`${source.id}-${style}`);
+          setCiteDropdown(null);
+          setTimeout(() => setCopiedCitation(null), 2000);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(citation).then(finish).catch(() => {
+            const el = document.createElement('textarea');
+            el.value = citation;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            finish();
+          });
+        } else {
+          const el = document.createElement('textarea');
+          el.value = citation;
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand('copy');
+          document.body.removeChild(el);
+          finish();
+        }
       };
 
       return (
@@ -734,7 +830,7 @@
             ) : (
               <div className="space-y-4">
                 {filteredSources.map(source => (
-                  <div key={source.id} className="rounded-lg p-4" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '12px', padding: '16px'}}>
+                  <div key={source.id} className="rounded-lg p-4" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '12px', padding: '16px', position: 'relative'}}>
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1">
                         <h4 className="font-bold">{source.title}</h4>
@@ -748,12 +844,74 @@
                           </p>
                         )}
                       </div>
-                      <button
-                        onClick={() => deleteSource(source.id)}
-                        style={{color: '#ef4444', cursor: 'pointer', background: 'none', border: 'none', fontSize: '18px'}}
-                      >
-                        🗑️
-                      </button>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px', position: 'relative'}}>
+                        {copiedCitation && copiedCitation.startsWith(source.id + '-') && (
+                          <span style={{fontSize: '12px', fontWeight: '700', color: '#22c55e', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '6px', padding: '3px 8px'}}>
+                            ✓ Copied!
+                          </span>
+                        )}
+                        <button
+                          onClick={() => setCiteDropdown(citeDropdown === source.id ? null : source.id)}
+                          style={{
+                            cursor: 'pointer',
+                            background: citeDropdown === source.id ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                            border: '2px solid var(--border-color)',
+                            borderRadius: '6px',
+                            color: citeDropdown === source.id ? 'white' : 'var(--text-secondary)',
+                            fontWeight: '600',
+                            fontSize: '12px',
+                            padding: '4px 10px',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          📋 Cite
+                        </button>
+                        <button
+                          onClick={() => deleteSource(source.id)}
+                          style={{color: '#ef4444', cursor: 'pointer', background: 'none', border: 'none', fontSize: '18px'}}
+                        >
+                          🗑️
+                        </button>
+                        {citeDropdown === source.id && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '100%',
+                            right: 0,
+                            marginTop: '6px',
+                            background: 'var(--bg-card)',
+                            border: '2px solid var(--border-color)',
+                            borderRadius: '10px',
+                            boxShadow: 'var(--shadow)',
+                            zIndex: 100,
+                            minWidth: '160px',
+                            overflow: 'hidden'
+                          }}>
+                            {['APA', 'MLA', 'Chicago'].map(style => (
+                              <button
+                                key={style}
+                                onClick={() => copyCitation(source, style)}
+                                style={{
+                                  display: 'block',
+                                  width: '100%',
+                                  textAlign: 'left',
+                                  padding: '10px 16px',
+                                  background: 'none',
+                                  border: 'none',
+                                  borderBottom: style !== 'Chicago' ? '1px solid var(--border-color)' : 'none',
+                                  color: 'var(--text-primary)',
+                                  fontWeight: '600',
+                                  fontSize: '13px',
+                                  cursor: 'pointer'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                              >
+                                {style}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     {source.keyFindings && (
                       <p className="text-sm mt-2"><strong>Key findings:</strong> {source.keyFindings}</p>
