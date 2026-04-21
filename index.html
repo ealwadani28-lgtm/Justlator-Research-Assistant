@@ -383,6 +383,20 @@
       const [bibliographyList, setBibliographyList] = useState([]);
       const [bibCopied, setBibCopied] = useState(false);
 
+      // Text direction state (RTL/LTR)
+      const [textDir, setTextDir] = useState(() => {
+        try { return localStorage.getItem('justlator-text-dir') || 'ltr'; } catch(e) { return 'ltr'; }
+      });
+
+      useEffect(() => {
+        try { localStorage.setItem('justlator-text-dir', textDir); } catch(e) {}
+      }, [textDir]);
+
+      const inputDirStyle = {
+        direction: textDir,
+        textAlign: textDir === 'rtl' ? 'right' : 'left'
+      };
+
       // Glossary state
       const [glossary, setGlossary] = useState([]);
       const [loadingGlossary, setLoadingGlossary] = useState(true);
@@ -915,6 +929,13 @@
                   <option value="summer-bright">☀️ Summer</option>
                   <option value="neon-tech">⚡ Winter</option>
                 </select>
+                <button
+                  onClick={() => setTextDir(d => d === 'ltr' ? 'rtl' : 'ltr')}
+                  title={textDir === 'ltr' ? 'Switch to RTL (Right-to-Left) for Arabic/Hebrew text' : 'Switch to LTR (Left-to-Right)'}
+                  style={{padding: '10px 20px', background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.4)', borderRadius: '8px', color: 'white', fontWeight: '700', cursor: 'pointer', minWidth: '90px', letterSpacing: '0.5px'}}
+                >
+                  {textDir === 'ltr' ? 'LTR ⇄' : '⇄ RTL'}
+                </button>
                 <button id="homeBtn" style={{padding: '10px 20px', background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', color: 'white', fontWeight: '600', cursor: 'pointer'}}>
                   🏠 Home
                 </button>
@@ -1204,9 +1225,10 @@
                   <label style={{display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '6px'}}>Source Term *</label>
                   <input
                     type="text"
+                    dir={textDir}
                     value={newGlossaryEntry.sourceTerm}
                     onChange={(e) => setNewGlossaryEntry({...newGlossaryEntry, sourceTerm: e.target.value})}
-                    style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)', ...inputDirStyle}}
                     placeholder="e.g., Domestication"
                   />
                 </div>
@@ -1214,9 +1236,10 @@
                   <label style={{display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '6px'}}>Target Term *</label>
                   <input
                     type="text"
+                    dir={textDir}
                     value={newGlossaryEntry.targetTerm}
                     onChange={(e) => setNewGlossaryEntry({...newGlossaryEntry, targetTerm: e.target.value})}
-                    style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)', ...inputDirStyle}}
                     placeholder="e.g., التطويع"
                   />
                 </div>
@@ -1224,9 +1247,10 @@
                   <label style={{display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '6px'}}>Source Language</label>
                   <input
                     type="text"
+                    dir={textDir}
                     value={newGlossaryEntry.sourceLang}
                     onChange={(e) => setNewGlossaryEntry({...newGlossaryEntry, sourceLang: e.target.value})}
-                    style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)', ...inputDirStyle}}
                     placeholder="e.g., English"
                   />
                 </div>
@@ -1234,9 +1258,10 @@
                   <label style={{display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '6px'}}>Target Language</label>
                   <input
                     type="text"
+                    dir={textDir}
                     value={newGlossaryEntry.targetLang}
                     onChange={(e) => setNewGlossaryEntry({...newGlossaryEntry, targetLang: e.target.value})}
-                    style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)'}}
+                    style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)', ...inputDirStyle}}
                     placeholder="e.g., Arabic"
                   />
                 </div>
@@ -1264,7 +1289,8 @@
                 <textarea
                   value={newGlossaryEntry.notes}
                   onChange={(e) => setNewGlossaryEntry({...newGlossaryEntry, notes: e.target.value})}
-                  style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)', minHeight: '80px', resize: 'vertical'}}
+                  dir={textDir}
+                  style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-primary)', color: 'var(--text-primary)', minHeight: '80px', resize: 'vertical', ...inputDirStyle}}
                   placeholder="Usage context, source, examples, or any relevant notes..."
                 />
               </div>
@@ -1281,10 +1307,11 @@
             <div style={{marginBottom: '20px'}}>
               <input
                 type="text"
+                dir={textDir}
                 value={glossarySearch}
                 onChange={(e) => setGlossarySearch(e.target.value)}
                 placeholder="🔍 Search by term, language, or domain..."
-                style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', background: 'var(--bg-card)', color: 'var(--text-primary)'}}
+                style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', background: 'var(--bg-card)', color: 'var(--text-primary)', ...inputDirStyle}}
               />
             </div>
 
@@ -1373,8 +1400,9 @@
                 <textarea
                   value={aiText}
                   onChange={(e) => setAiText(e.target.value)}
+                  dir={textDir}
                   className="w-full h-48 p-4 border rounded"
-                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px'}}
+                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', ...inputDirStyle}}
                   placeholder="Paste your AI-generated text here..."
                 />
               </div>
@@ -1428,8 +1456,9 @@
                   type="text"
                   value={paperTopic}
                   onChange={(e) => setPaperTopic(e.target.value)}
+                  dir={textDir}
                   className="w-full p-3 border rounded"
-                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px'}}
+                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', ...inputDirStyle}}
                   placeholder="e.g., Cultural adaptation in literary translation"
                 />
               </div>
@@ -1457,8 +1486,9 @@
                 <textarea
                   value={paperNotes}
                   onChange={(e) => setPaperNotes(e.target.value)}
+                  dir={textDir}
                   className="w-full h-32 p-4 border rounded"
-                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px'}}
+                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', ...inputDirStyle}}
                   placeholder="Add specific points, theories, or requirements..."
                 />
               </div>
@@ -1654,8 +1684,9 @@
                 <textarea
                   value={text1}
                   onChange={(e) => setText1(e.target.value)}
+                  dir={textDir}
                   className="w-full h-40 p-4 border rounded"
-                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px'}}
+                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', ...inputDirStyle}}
                   placeholder="Paste your text here..."
                 />
               </div>
@@ -1665,8 +1696,9 @@
                 <textarea
                   value={text2}
                   onChange={(e) => setText2(e.target.value)}
+                  dir={textDir}
                   className="w-full h-40 p-4 border rounded"
-                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px'}}
+                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', ...inputDirStyle}}
                   placeholder="Paste comparison text here..."
                 />
               </div>
