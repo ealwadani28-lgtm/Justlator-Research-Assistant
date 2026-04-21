@@ -396,6 +396,11 @@
       const [bibliographyList, setBibliographyList] = useState([]);
       const [bibCopied, setBibCopied] = useState(false);
 
+      // Paper Writer citation style (for inline bibliography)
+      const [writerCitationStyle, setWriterCitationStyle] = useState('APA');
+      const [bibAppended, setBibAppended] = useState(false);
+      const skipBibResetRef = useRef(false);
+
       // Text direction state (RTL/LTR)
       const [textDir, setTextDir] = useState(() => {
         try { return localStorage.getItem('justlator-text-dir') || 'ltr'; } catch(e) { return 'ltr'; }
@@ -449,6 +454,15 @@
         return () => clearTimeout(timer);
       }, [paperTopic, paperSection, paperNotes, generatedPaper]);
 
+      // Reset bibAppended whenever paper content changes (except when the change itself is the append)
+      useEffect(() => {
+        if (skipBibResetRef.current) {
+          skipBibResetRef.current = false;
+          return;
+        }
+        setBibAppended(false);
+      }, [generatedPaper]);
+
       const clearDraft = () => {
         skipNextDraftSaveRef.current = true;
         try { localStorage.removeItem('justlator-paper-draft'); } catch(e) {}
@@ -457,6 +471,7 @@
         setPaperNotes('');
         setGeneratedPaper('');
         setDraftStatus('');
+        setBibAppended(false);
       };
 
       const inputDirStyle = {
@@ -875,12 +890,28 @@
         return sorted.map(source => formatCitation(source, 'APA')).join('\n\n');
       };
 
+      const getWriterBibliographyEntries = (style) => {
+        if (knowledgeBase.length === 0) return [];
+        const getLastName = (author) => {
+          if (!author) return '';
+          const parts = author.trim().split(/\s+/);
+          return parts[parts.length - 1].toLowerCase();
+        };
+        const sorted = [...knowledgeBase].sort((a, b) =>
+          getLastName(a.author).localeCompare(getLastName(b.author))
+        );
+        return sorted.map(source => formatCitation(source, style || 'APA'));
+      };
+
       const exportAsTxt = () => {
         const filename = sanitizeFilename(paperTopic) + '.txt';
-        const bibText = getBibliographyText();
         let content = generatedPaper;
-        if (bibText) {
-          content += '\n\n\n' + '='.repeat(60) + '\nREFERENCES\n' + '='.repeat(60) + '\n\n' + bibText;
+        if (!bibAppended) {
+          const bibEntries = getWriterBibliographyEntries(writerCitationStyle);
+          const bibText = bibEntries.join('\n\n');
+          if (bibText) {
+            content += '\n\n\n' + '='.repeat(60) + '\nREFERENCES\n' + '='.repeat(60) + '\n\n' + bibText;
+          }
         }
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
@@ -893,7 +924,7 @@
 
       const exportAsHtml = () => {
         const filename = sanitizeFilename(paperTopic) + '.html';
-        const bibText = getBibliographyText();
+        const bibText = bibAppended ? '' : getWriterBibliographyEntries(writerCitationStyle).join('\n\n');
         const escapeHtml = (str) => str
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
@@ -1671,6 +1702,35 @@
                 />
               </div>
 
+              <div className="mb-4">
+                <label className="block font-medium mb-2">Bibliography Citation Style</label>
+                <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+                  {['APA', 'MLA', 'Chicago'].map(style => (
+                    <button
+                      key={style}
+                      type="button"
+                      onClick={() => { setWriterCitationStyle(style); setBibAppended(false); }}
+                      style={{
+                        padding: '8px 22px',
+                        borderRadius: '8px',
+                        fontWeight: '700',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        border: '2px solid var(--border-color)',
+                        background: writerCitationStyle === style ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' : 'var(--bg-secondary)',
+                        color: writerCitationStyle === style ? 'white' : 'var(--text-primary)',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {style}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-sm mt-1" style={{color: 'var(--text-secondary)'}}>
+                  The bibliography appended to your paper will use this format.
+                </p>
+              </div>
+
               <button
                 onClick={() => alert('Full API integration required for this feature')}
                 disabled={loading}
@@ -1725,6 +1785,57 @@
                   <div className="p-4 rounded max-h-96 overflow-y-auto" style={{background: '#eff6ff', border: '2px solid #60a5fa', borderRadius: '10px'}}>
                     {generatedPaper}
                   </div>
+
+                  {/* Inline bibliography section */}
+                  {(() => {
+                    const bibEntries = getWriterBibliographyEntries(writerCitationStyle);
+                    if (bibEntries.length === 0) return null;
+                    return (
+                      <div className="mt-6" style={{border: '2px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden'}}>
+                        <div style={{padding: '14px 20px', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', borderBottom: '1px solid var(--border-color)'}}>
+                          <div>
+                            <span style={{fontWeight: '700', fontSize: '15px', color: 'var(--accent-primary)'}}>📑 Bibliography</span>
+                            <span className="text-sm" style={{marginLeft: '10px', color: 'var(--text-secondary)'}}>
+                              {bibEntries.length} source{bibEntries.length !== 1 ? 's' : ''} • {writerCitationStyle} format
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const heading = '\n\n---\n\nReferences\n\n';
+                              const body = bibEntries.join('\n\n');
+                              skipBibResetRef.current = true;
+                              setGeneratedPaper(prev => prev + heading + body);
+                              setBibAppended(true);
+                            }}
+                            disabled={bibAppended}
+                            style={{
+                              padding: '8px 18px',
+                              borderRadius: '8px',
+                              fontWeight: '700',
+                              fontSize: '13px',
+                              cursor: bibAppended ? 'default' : 'pointer',
+                              border: 'none',
+                              background: bibAppended
+                                ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+                                : 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+                              color: 'white',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {bibAppended ? '✓ Appended to Paper' : '⊕ Append to Paper'}
+                          </button>
+                        </div>
+                        <div style={{padding: '16px 20px', background: 'var(--bg-card)', maxHeight: '260px', overflowY: 'auto'}}>
+                          {bibEntries.map((entry, i) => (
+                            <p key={i} style={{marginBottom: i < bibEntries.length - 1 ? '10px' : 0, fontSize: '14px', color: 'var(--text-primary)', paddingLeft: '2em', textIndent: '-2em', lineHeight: '1.7'}}>
+                              {entry}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
