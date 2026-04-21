@@ -336,7 +336,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     function App() {
       // State management
@@ -359,13 +359,24 @@
       const [activeTagFilter, setActiveTagFilter] = useState(null);
       const [uploadingFile, setUploadingFile] = useState(false);
       
-      // Paper Writer state
-      const [paperTopic, setPaperTopic] = useState('');
-      const [paperSection, setPaperSection] = useState('introduction');
-      const [paperNotes, setPaperNotes] = useState('');
-      const [generatedPaper, setGeneratedPaper] = useState('');
+      // Paper Writer state (initialized from localStorage draft if present)
+      const [paperTopic, setPaperTopic] = useState(() => {
+        try { const d = localStorage.getItem('justlator-paper-draft'); return d ? (JSON.parse(d).topic || '') : ''; } catch(e) { return ''; }
+      });
+      const [paperSection, setPaperSection] = useState(() => {
+        try { const d = localStorage.getItem('justlator-paper-draft'); return d ? (JSON.parse(d).section || 'introduction') : 'introduction'; } catch(e) { return 'introduction'; }
+      });
+      const [paperNotes, setPaperNotes] = useState(() => {
+        try { const d = localStorage.getItem('justlator-paper-draft'); return d ? (JSON.parse(d).notes || '') : ''; } catch(e) { return ''; }
+      });
+      const [generatedPaper, setGeneratedPaper] = useState(() => {
+        try { const d = localStorage.getItem('justlator-paper-draft'); return d ? (JSON.parse(d).content || '') : ''; } catch(e) { return ''; }
+      });
       const [wordCount, setWordCount] = useState(0);
       const [pageCount, setPageCount] = useState(0);
+      const [draftStatus, setDraftStatus] = useState('');
+      const paperDraftFirstRender = useRef(true);
+      const skipNextDraftSaveRef = useRef(false);
       
       // Humanizer state
       const [aiText, setAiText] = useState('');
@@ -393,6 +404,60 @@
       useEffect(() => {
         try { localStorage.setItem('justlator-text-dir', textDir); } catch(e) {}
       }, [textDir]);
+
+      // Show "Draft restored" once on mount if a saved draft has meaningful content
+      useEffect(() => {
+        try {
+          const raw = localStorage.getItem('justlator-paper-draft');
+          if (raw) {
+            const d = JSON.parse(raw);
+            if (d.topic || d.content || d.notes) {
+              setDraftStatus('restored');
+              setTimeout(() => setDraftStatus(''), 3000);
+            }
+          }
+        } catch(e) {}
+      }, []);
+
+      // Auto-save paper draft to localStorage (debounced 1s, skip first render and post-clear)
+      useEffect(() => {
+        if (paperDraftFirstRender.current) {
+          paperDraftFirstRender.current = false;
+          return;
+        }
+        if (skipNextDraftSaveRef.current) {
+          skipNextDraftSaveRef.current = false;
+          return;
+        }
+        const timer = setTimeout(() => {
+          try {
+            const isEmpty = !paperTopic && !paperNotes && !generatedPaper && paperSection === 'introduction';
+            if (isEmpty) {
+              localStorage.removeItem('justlator-paper-draft');
+            } else {
+              localStorage.setItem('justlator-paper-draft', JSON.stringify({
+                topic: paperTopic,
+                section: paperSection,
+                notes: paperNotes,
+                content: generatedPaper
+              }));
+              setDraftStatus('saved');
+              setTimeout(() => setDraftStatus(''), 2000);
+            }
+          } catch(e) {}
+        }, 1000);
+        return () => clearTimeout(timer);
+      }, [paperTopic, paperSection, paperNotes, generatedPaper]);
+
+      const clearDraft = () => {
+        skipNextDraftSaveRef.current = true;
+        try { localStorage.removeItem('justlator-paper-draft'); } catch(e) {}
+        setPaperTopic('');
+        setPaperSection('introduction');
+        setPaperNotes('');
+        setGeneratedPaper('');
+        setDraftStatus('');
+      };
 
       const inputDirStyle = {
         direction: textDir,
@@ -1532,7 +1597,27 @@
 
         {activeTab === 'writer' && (
           <div>
-            <h2 className="text-3xl font-bold mb-6" style={{color: 'var(--accent-primary)'}}>📝 Paper Writer</h2>
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '24px'}}>
+              <h2 className="text-3xl font-bold" style={{color: 'var(--accent-primary)'}}>📝 Paper Writer</h2>
+              <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                {draftStatus === 'restored' && (
+                  <span style={{fontSize: '13px', fontWeight: '600', color: 'var(--accent-primary)', background: 'rgba(126,161,252,0.12)', border: '1px solid var(--accent-primary)', borderRadius: '6px', padding: '4px 10px', transition: 'opacity 0.3s'}}>
+                    📂 Draft restored
+                  </span>
+                )}
+                {draftStatus === 'saved' && (
+                  <span style={{fontSize: '13px', fontWeight: '600', color: '#16a34a', background: 'rgba(22,163,74,0.1)', border: '1px solid #16a34a', borderRadius: '6px', padding: '4px 10px', transition: 'opacity 0.3s'}}>
+                    ✓ Draft saved
+                  </span>
+                )}
+                <button
+                  onClick={clearDraft}
+                  style={{fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer'}}
+                >
+                  🗑 Clear Draft
+                </button>
+              </div>
+            </div>
             <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
               <div className="mb-4 p-4 rounded" style={{background: 'rgba(126, 161, 252, 0.1)', border: '2px solid var(--accent-primary)', borderRadius: '10px'}}>
                 <strong>📄 Unlimited Page Generation!</strong>
