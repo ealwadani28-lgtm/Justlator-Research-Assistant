@@ -474,6 +474,11 @@
         setBibAppended(false);
       }, [generatedPaper]);
 
+      // Keep export citation style in sync with the Bibliography tab selection
+      useEffect(() => {
+        setWriterCitationStyle(bibFormat);
+      }, [bibFormat]);
+
       const clearDraft = () => {
         skipNextDraftSaveRef.current = true;
         try { localStorage.removeItem('justlator-paper-draft'); } catch(e) {}
@@ -1860,6 +1865,29 @@
                       >
                         📋 Copy
                       </button>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-secondary)', borderRadius: '8px', border: '2px solid var(--border-color)', padding: '2px 4px'}}>
+                        <span style={{fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)', paddingLeft: '4px', whiteSpace: 'nowrap'}}>Cite:</span>
+                        {['APA', 'MLA', 'Chicago'].map(style => (
+                          <button
+                            key={style}
+                            type="button"
+                            onClick={() => setWriterCitationStyle(style)}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              fontWeight: '700',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              border: 'none',
+                              background: writerCitationStyle === style ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' : 'transparent',
+                              color: writerCitationStyle === style ? 'white' : 'var(--text-secondary)',
+                              transition: 'all 0.15s'
+                            }}
+                          >
+                            {style}
+                          </button>
+                        ))}
+                      </div>
                       <button
                         onClick={exportAsTxt}
                         style={{padding: '6px 14px', borderRadius: '8px', fontWeight: '600', fontSize: '13px', cursor: 'pointer', border: '2px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)'}}
