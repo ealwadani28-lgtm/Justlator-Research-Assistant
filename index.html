@@ -378,6 +378,11 @@
       const [citeDropdown, setCiteDropdown] = useState(null);
       const [copiedCitation, setCopiedCitation] = useState(null);
 
+      // Bibliography state
+      const [bibFormat, setBibFormat] = useState('APA');
+      const [bibliographyList, setBibliographyList] = useState([]);
+      const [bibCopied, setBibCopied] = useState(false);
+
       useEffect(() => {
         if (!citeDropdown) return;
         const handleClick = () => setCiteDropdown(null);
@@ -630,6 +635,51 @@
         }
       };
 
+      const compileBibliography = (format) => {
+        const fmt = format || bibFormat;
+        if (knowledgeBase.length === 0) {
+          setBibliographyList([]);
+          return;
+        }
+        const getLastName = (author) => {
+          if (!author) return '';
+          const parts = author.trim().split(/\s+/);
+          return parts[parts.length - 1].toLowerCase();
+        };
+        const sorted = [...knowledgeBase].sort((a, b) =>
+          getLastName(a.author).localeCompare(getLastName(b.author))
+        );
+        const entries = sorted.map(source => formatCitation(source, fmt));
+        setBibliographyList(entries);
+      };
+
+      const copyBibliography = () => {
+        const text = bibliographyList.join('\n\n');
+        const finish = () => {
+          setBibCopied(true);
+          setTimeout(() => setBibCopied(false), 2000);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(finish).catch(() => {
+            const el = document.createElement('textarea');
+            el.value = text;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            finish();
+          });
+        } else {
+          const el = document.createElement('textarea');
+          el.value = text;
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand('copy');
+          document.body.removeChild(el);
+          finish();
+        }
+      };
+
       return (
         <div style={{minHeight: '100vh', background: 'var(--bg-primary)'}}>
           {/* Header */}
@@ -670,10 +720,15 @@
           {/* Navigation */}
           <div style={{background: 'var(--bg-secondary)', borderBottom: '2px solid var(--border-color)', padding: '0 24px', position: 'sticky', top: '80px', zIndex: 98}}>
             <div style={{maxWidth: '1400px', margin: '0 auto', display: 'flex', gap: '32px', overflowX: 'auto'}}>
-              {['guide', 'knowledge', 'humanizer', 'writer', 'similarity', 'about'].map(tab => (
+              {['guide', 'knowledge', 'humanizer', 'writer', 'bibliography', 'similarity', 'about'].map(tab => (
                 <button
                   key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    if (tab === 'bibliography') {
+                      compileBibliography(bibFormat);
+                    }
+                  }}
                   style={{
                     padding: '16px 0',
                     background: 'none',
@@ -689,6 +744,7 @@
                   {tab === 'knowledge' && '📚 Knowledge Base'}
                   {tab === 'humanizer' && '✨ AI Humanizer'}
                   {tab === 'writer' && '📝 Paper Writer'}
+                  {tab === 'bibliography' && '📑 Bibliography'}
                   {tab === 'similarity' && '🔍 Similarity Checker'}
                   {tab === 'about' && 'ℹ️ About'}
                 </button>
@@ -1042,6 +1098,17 @@
                 {loading ? 'Generating...' : 'Generate Section'}
               </button>
 
+              <button
+                onClick={() => {
+                  compileBibliography(bibFormat);
+                  setActiveTab('bibliography');
+                }}
+                className="w-full py-3 px-6 rounded font-medium"
+                style={{background: 'none', border: '2px solid var(--border-color)', color: 'var(--text-secondary)', padding: '12px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', marginBottom: '8px'}}
+              >
+                📑 Generate Bibliography from Knowledge Base
+              </button>
+
               {generatedPaper && (
                 <div className="mt-6">
                   <div className="flex justify-between items-center mb-2">
@@ -1061,6 +1128,124 @@
                   </div>
                   <div className="p-4 rounded max-h-96 overflow-y-auto" style={{background: '#eff6ff', border: '2px solid #60a5fa', borderRadius: '10px'}}>
                     {generatedPaper}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'bibliography' && (
+          <div>
+            <h2 className="text-3xl font-bold mb-6" style={{color: 'var(--accent-primary)'}}>📑 Bibliography</h2>
+            <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
+              <div className="mb-4 p-4 rounded" style={{background: 'rgba(126, 161, 252, 0.1)', border: '2px solid var(--accent-primary)', borderRadius: '10px'}}>
+                <strong>📋 Auto-compiled reference list</strong>
+                <p className="text-sm mt-1" style={{color: 'var(--text-secondary)'}}>
+                  All {knowledgeBase.length} source{knowledgeBase.length !== 1 ? 's' : ''} from your Knowledge Base, sorted alphabetically by author last name.
+                </p>
+              </div>
+
+              <div style={{display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', flexWrap: 'wrap'}}>
+                <label className="font-medium" style={{whiteSpace: 'nowrap'}}>Citation Style:</label>
+                {['APA', 'MLA', 'Chicago'].map(style => (
+                  <button
+                    key={style}
+                    onClick={() => {
+                      setBibFormat(style);
+                      compileBibliography(style);
+                    }}
+                    style={{
+                      padding: '8px 20px',
+                      borderRadius: '8px',
+                      fontWeight: '700',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      border: '2px solid var(--border-color)',
+                      background: bibFormat === style ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' : 'var(--bg-secondary)',
+                      color: bibFormat === style ? 'white' : 'var(--text-primary)',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {style}
+                  </button>
+                ))}
+                <button
+                  onClick={() => compileBibliography(bibFormat)}
+                  style={{
+                    padding: '8px 20px',
+                    borderRadius: '8px',
+                    fontWeight: '600',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    border: '2px solid var(--accent-primary)',
+                    background: 'none',
+                    color: 'var(--accent-primary)',
+                    marginLeft: 'auto'
+                  }}
+                >
+                  🔄 Refresh
+                </button>
+              </div>
+
+              {knowledgeBase.length === 0 ? (
+                <div className="text-center py-12" style={{color: 'var(--text-secondary)'}}>
+                  <div style={{fontSize: '48px', marginBottom: '12px'}}>📚</div>
+                  <p className="font-medium">No sources in your Knowledge Base yet.</p>
+                  <p className="text-sm mt-2">Add sources in the Knowledge Base tab and they will appear here.</p>
+                </div>
+              ) : bibliographyList.length === 0 ? (
+                <div className="text-center py-8" style={{color: 'var(--text-secondary)'}}>
+                  <p>Click a format button above to generate your bibliography.</p>
+                </div>
+              ) : (
+                <div>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
+                    <p className="text-sm font-semibold" style={{color: 'var(--text-secondary)'}}>
+                      {bibliographyList.length} reference{bibliographyList.length !== 1 ? 's' : ''} • {bibFormat} format
+                    </p>
+                    <button
+                      onClick={copyBibliography}
+                      style={{
+                        padding: '10px 24px',
+                        borderRadius: '8px',
+                        fontWeight: '700',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        border: 'none',
+                        background: bibCopied
+                          ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+                          : 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+                        color: 'white',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 2px 8px var(--glow-1)'
+                      }}
+                    >
+                      {bibCopied ? '✓ Copied!' : '📋 Copy All'}
+                    </button>
+                  </div>
+
+                  <div style={{
+                    background: 'var(--bg-secondary)',
+                    border: '2px solid var(--border-color)',
+                    borderRadius: '12px',
+                    padding: '24px',
+                    lineHeight: '1.8'
+                  }}>
+                    {bibliographyList.map((entry, i) => (
+                      <p
+                        key={i}
+                        style={{
+                          marginBottom: i < bibliographyList.length - 1 ? '12px' : 0,
+                          color: 'var(--text-primary)',
+                          fontSize: '14px',
+                          paddingLeft: '2em',
+                          textIndent: '-2em'
+                        }}
+                      >
+                        {entry}
+                      </p>
+                    ))}
                   </div>
                 </div>
               )}
