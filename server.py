@@ -1,5 +1,5 @@
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-import os
+import socket
 
 class MyHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -8,9 +8,14 @@ class MyHandler(SimpleHTTPRequestHandler):
         self.send_header('Expires', '0')
         super().end_headers()
 
+    def log_message(self, format, *args):
+        pass
+
+class ReusableHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
 if __name__ == '__main__':
-    # Ensure the zip file is in the root directory
     server_address = ('0.0.0.0', 5000)
-    httpd = HTTPServer(server_address, MyHandler)
+    httpd = ReusableHTTPServer(server_address, MyHandler)
     print(f"Serving on port 5000...")
     httpd.serve_forever()
