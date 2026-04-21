@@ -387,6 +387,10 @@
       const [text2, setText2] = useState('');
       const [similarityResult, setSimilarityResult] = useState('');
       
+      // Edit source state
+      const [editingSourceId, setEditingSourceId] = useState(null);
+      const [editSource, setEditSource] = useState(null);
+
       // Citation state
       const [citeDropdown, setCiteDropdown] = useState(null);
       const [copiedCitation, setCopiedCitation] = useState(null);
@@ -409,6 +413,13 @@
       useEffect(() => {
         try { localStorage.setItem('justlator-text-dir', textDir); } catch(e) {}
       }, [textDir]);
+
+      // Auto-refresh bibliography when sources change (only if already generated)
+      useEffect(() => {
+        if (bibliographyList.length > 0) {
+          compileBibliography(bibFormat);
+        }
+      }, [knowledgeBase]);
 
       // Show "Draft restored" once on mount if a saved draft has meaningful content
       useEffect(() => {
@@ -749,6 +760,69 @@
           setKnowledgeBase(knowledgeBase.filter(s => s.id !== id));
         } catch (error) {
           alert('Error deleting source: ' + error.message);
+        }
+      };
+
+      const openEditSource = (source) => {
+        setEditSource({
+          ...source,
+          tags: Array.isArray(source.tags) ? source.tags.join(', ') : (source.tags || '')
+        });
+        setEditingSourceId(source.id);
+      };
+
+      const updateSource = async () => {
+        if (!editSource.title || !editSource.author) {
+          alert('Please fill in at least title and author');
+          return;
+        }
+
+        const parsedTags = editSource.tags
+          ? editSource.tags.split(',').map(t => t.trim().toLowerCase()).filter(t => t.length > 0)
+          : [];
+
+        const updated = {
+          ...editSource,
+          tags: parsedTags
+        };
+
+        try {
+          if (typeof window.storage !== 'undefined') {
+            // Rebuild or clear chunks when fullText changes
+            if (updated.fullText && updated.fullText.length > 10000) {
+              const chunkSize = 2000;
+              const chunks = [];
+              for (let i = 0; i < updated.fullText.length; i += chunkSize) {
+                const chunkText = updated.fullText.substring(i, i + chunkSize);
+                const chunkNumber = Math.floor(i / chunkSize) + 1;
+                const totalChunks = Math.ceil(updated.fullText.length / chunkSize);
+                chunks.push({
+                  sourceId: updated.id,
+                  chunkNumber,
+                  totalChunks,
+                  text: chunkText,
+                  startChar: i,
+                  endChar: Math.min(i + chunkSize, updated.fullText.length),
+                  pageRange: null
+                });
+              }
+              await window.storage.set(`chunks:${updated.id}`, JSON.stringify(chunks));
+              updated.hasChunks = true;
+              updated.chunkCount = chunks.length;
+            } else {
+              // fullText is now short enough — remove stale chunks
+              await window.storage.delete(`chunks:${updated.id}`).catch(() => {});
+              updated.hasChunks = false;
+              updated.chunkCount = 0;
+            }
+
+            await window.storage.set(`source:${updated.id}`, JSON.stringify(updated));
+          }
+          setKnowledgeBase(knowledgeBase.map(s => s.id === updated.id ? updated : s));
+          setEditingSourceId(null);
+          setEditSource(null);
+        } catch (error) {
+          alert('Error saving source: ' + error.message);
         }
       };
 
@@ -1337,6 +1411,24 @@
                           }}
                         >
                           📋 Cite
+                        </button>
+                        <button
+                          onClick={() => openEditSource(source)}
+                          style={{
+                            cursor: 'pointer',
+                            background: 'var(--bg-secondary)',
+                            border: '2px solid var(--border-color)',
+                            borderRadius: '6px',
+                            color: 'var(--text-secondary)',
+                            fontWeight: '600',
+                            fontSize: '12px',
+                            padding: '4px 10px',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-primary)'; e.currentTarget.style.color = 'white'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-secondary)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                        >
+                          ✏️ Edit
                         </button>
                         <button
                           onClick={() => deleteSource(source.id)}
@@ -2061,6 +2153,128 @@
           © 2026 Justlator • Built with Claude (Anthropic AI) • Translation Studies Research Assistant
         </p>
       </footer>
+
+      {/* Edit Source Modal */}
+      {editingSourceId && editSource && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) { setEditingSourceId(null); setEditSource(null); } }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '24px'
+          }}
+        >
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '2px solid var(--border-color)',
+            borderRadius: '16px',
+            padding: '28px',
+            width: '100%',
+            maxWidth: '600px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            boxShadow: 'var(--shadow)'
+          }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
+              <h3 style={{fontSize: '20px', fontWeight: '800', margin: 0}}>✏️ Edit Source</h3>
+              <button
+                onClick={() => { setEditingSourceId(null); setEditSource(null); }}
+                style={{background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: 'var(--text-secondary)', lineHeight: 1}}
+              >×</button>
+            </div>
+
+            <div style={{display: 'flex', flexDirection: 'column', gap: '14px'}}>
+              <div>
+                <label style={{display: 'block', fontWeight: '700', fontSize: '13px', marginBottom: '4px'}}>Title *</label>
+                <input
+                  value={editSource.title}
+                  onChange={e => setEditSource({...editSource, title: e.target.value})}
+                  placeholder="Source title"
+                  style={{width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box'}}
+                />
+              </div>
+              <div>
+                <label style={{display: 'block', fontWeight: '700', fontSize: '13px', marginBottom: '4px'}}>Author *</label>
+                <input
+                  value={editSource.author}
+                  onChange={e => setEditSource({...editSource, author: e.target.value})}
+                  placeholder="Author name(s)"
+                  style={{width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box'}}
+                />
+              </div>
+              <div style={{display: 'flex', gap: '12px'}}>
+                <div style={{flex: 1}}>
+                  <label style={{display: 'block', fontWeight: '700', fontSize: '13px', marginBottom: '4px'}}>Year</label>
+                  <input
+                    value={editSource.year}
+                    onChange={e => setEditSource({...editSource, year: e.target.value})}
+                    placeholder="e.g. 2023"
+                    style={{width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box'}}
+                  />
+                </div>
+                <div style={{flex: 1}}>
+                  <label style={{display: 'block', fontWeight: '700', fontSize: '13px', marginBottom: '4px'}}>Type</label>
+                  <select
+                    value={editSource.type}
+                    onChange={e => setEditSource({...editSource, type: e.target.value})}
+                    style={{width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box'}}
+                  >
+                    <option value="article">Article</option>
+                    <option value="book">Book</option>
+                    <option value="thesis">Thesis</option>
+                    <option value="theory">Theory</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label style={{display: 'block', fontWeight: '700', fontSize: '13px', marginBottom: '4px'}}>Key Findings</label>
+                <textarea
+                  value={editSource.keyFindings || ''}
+                  onChange={e => setEditSource({...editSource, keyFindings: e.target.value})}
+                  placeholder="Key findings or summary"
+                  rows={3}
+                  style={{width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box'}}
+                />
+              </div>
+              <div>
+                <label style={{display: 'block', fontWeight: '700', fontSize: '13px', marginBottom: '4px'}}>Full Text</label>
+                <textarea
+                  value={editSource.fullText || ''}
+                  onChange={e => setEditSource({...editSource, fullText: e.target.value})}
+                  placeholder="Full text content (optional)"
+                  rows={4}
+                  style={{width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box'}}
+                />
+              </div>
+              <div>
+                <label style={{display: 'block', fontWeight: '700', fontSize: '13px', marginBottom: '4px'}}>Tags</label>
+                <input
+                  value={editSource.tags || ''}
+                  onChange={e => setEditSource({...editSource, tags: e.target.value})}
+                  placeholder="tag1, tag2, tag3"
+                  style={{width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box'}}
+                />
+              </div>
+            </div>
+
+            <div style={{display: 'flex', gap: '10px', marginTop: '22px', justifyContent: 'flex-end'}}>
+              <button
+                onClick={() => { setEditingSourceId(null); setEditSource(null); }}
+                style={{padding: '10px 20px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontWeight: '700', fontSize: '14px', cursor: 'pointer'}}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={updateSource}
+                style={{padding: '10px 24px', border: 'none', borderRadius: '8px', background: 'var(--accent-primary)', color: 'white', fontWeight: '700', fontSize: '14px', cursor: 'pointer'}}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
