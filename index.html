@@ -352,9 +352,11 @@
         year: '',
         type: 'article',
         keyFindings: '',
-        fullText: ''
+        fullText: '',
+        tags: ''
       });
       const [searchTerm, setSearchTerm] = useState('');
+      const [activeTagFilter, setActiveTagFilter] = useState(null);
       const [uploadingFile, setUploadingFile] = useState(false);
       
       // Paper Writer state
@@ -580,8 +582,13 @@
           return;
         }
 
+        const parsedTags = newSource.tags
+          ? newSource.tags.split(',').map(t => t.trim().toLowerCase()).filter(t => t.length > 0)
+          : [];
+
         const source = {
           ...newSource,
+          tags: parsedTags,
           id: Date.now().toString(),
           dateAdded: new Date().toISOString()
         };
@@ -639,7 +646,8 @@
             year: '',
             type: 'article',
             keyFindings: '',
-            fullText: ''
+            fullText: '',
+            tags: ''
           });
           
           alert(source.hasChunks 
@@ -664,7 +672,12 @@
         }
       };
 
+      const allTags = Array.from(new Set(
+        knowledgeBase.flatMap(s => Array.isArray(s.tags) ? s.tags : [])
+      )).sort();
+
       const filteredSources = knowledgeBase.filter(source => {
+        if (activeTagFilter && !(Array.isArray(source.tags) && source.tags.includes(activeTagFilter))) return false;
         if (!searchTerm) return true;
         const searchLower = searchTerm.toLowerCase();
         return source.title.toLowerCase().includes(searchLower) ||
@@ -1082,6 +1095,18 @@
                   placeholder="Paste full abstract or notes... (Smart chunking for 10,000+ chars)"
                 />
               </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">Tags <span style={{fontWeight: '400', color: 'var(--text-secondary)'}}>— comma-separated (e.g. equivalence, corpus study)</span></label>
+                <input
+                  type="text"
+                  value={newSource.tags}
+                  onChange={(e) => setNewSource({...newSource, tags: e.target.value})}
+                  className="w-full p-2 border rounded"
+                  style={{border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px'}}
+                  placeholder="e.g. domestication, equivalence, corpus study"
+                />
+              </div>
               
               <button
                 onClick={addSource}
@@ -1091,6 +1116,50 @@
                 ➕ Add to Knowledge Base
               </button>
             </div>
+
+            {/* Tag Filter Bar */}
+            {allTags.length > 0 && (
+              <div style={{marginBottom: '16px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px'}}>
+                <span style={{fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginRight: '4px'}}>Filter by tag:</span>
+                {allTags.map(tag => (
+                  <button
+                    key={tag}
+                    onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '20px',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      border: '2px solid var(--accent-primary)',
+                      background: activeTagFilter === tag ? 'var(--accent-primary)' : 'transparent',
+                      color: activeTagFilter === tag ? 'white' : 'var(--accent-primary)',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    #{tag}
+                  </button>
+                ))}
+                {activeTagFilter && (
+                  <button
+                    onClick={() => setActiveTagFilter(null)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      fontSize: '12px',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      border: '2px solid #ef4444',
+                      background: 'transparent',
+                      color: '#ef4444',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    ✕ Clear filter
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Search and Display */}
             <div className="mb-4">
@@ -1125,6 +1194,30 @@
                               <span style={{color: '#00a8e8'}}> • 🎓 Exact page tracking ({source.totalPages} pages)</span>
                             )}
                           </p>
+                        )}
+                        {Array.isArray(source.tags) && source.tags.length > 0 && (
+                          <div style={{display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px'}}>
+                            {source.tags.map(tag => (
+                              <span
+                                key={tag}
+                                onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '2px 10px',
+                                  borderRadius: '20px',
+                                  fontSize: '11px',
+                                  fontWeight: '700',
+                                  cursor: 'pointer',
+                                  border: '1.5px solid var(--accent-primary)',
+                                  background: activeTagFilter === tag ? 'var(--accent-primary)' : 'rgba(126,161,252,0.1)',
+                                  color: activeTagFilter === tag ? 'white' : 'var(--accent-primary)',
+                                  transition: 'all 0.2s'
+                                }}
+                              >
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </div>
                       <div style={{display: 'flex', alignItems: 'center', gap: '8px', position: 'relative'}}>
