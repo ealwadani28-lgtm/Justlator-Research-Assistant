@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import anthropic
 import os
+import secrets
 import time
 from collections import defaultdict
 
@@ -18,6 +19,13 @@ _allowed_origins = ['http://localhost:5000', 'http://127.0.0.1:5000']
 if _dev_domain:
     _allowed_origins.append(f'https://{_dev_domain}')
 CORS(app, origins=_allowed_origins)
+
+# ── App token (server-side session credential) ───────────────────────────────
+# Generated fresh on each server start. The frontend must request it from
+# /api/config and include it with every server-billed AI request.  Without a
+# valid token the server-side ANTHROPIC_API_KEY is never used, so anonymous
+# callers (curl, bots) cannot spend server credits even if they know the URLs.
+_APP_TOKEN: str = secrets.token_hex(32)
 
 # ── Simple in-memory rate limiter ─────────────────────────────────────────────
 # Applied only when a server-side key is in use; user-supplied keys are the
@@ -52,20 +60,29 @@ def index():
 
 @app.route('/api/config', methods=['GET'])
 def config():
-    """Tell the frontend whether a server-side API key is configured."""
+    """Tell the frontend whether a server-side API key is configured.
+    Also returns the app token that the frontend must present with every
+    server-billed request so anonymous callers cannot spend server credits."""
     has_server_key = bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())
-    return jsonify({'hasServerKey': has_server_key})
+    return jsonify({'hasServerKey': has_server_key, 'appToken': _APP_TOKEN})
 
 
 def _get_api_key(data):
     """
     Return the API key to use.
     Priority: server-side env var > user-provided key in request body.
+
+    When a server-side key exists the caller MUST supply a valid appToken.
+    Without it we fall back to the user-supplied key (or fail with 401).
     """
     server_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
     if server_key:
-        return server_key, True   # (key, is_server_key)
-    return (data.get('apiKey') or '').strip(), False
+        caller_token = (data.get('appToken') or '').strip()
+        if secrets.compare_digest(caller_token, _APP_TOKEN):
+            return server_key, True   # (key, is_server_key)
+        # Token missing or wrong — do not expose server key; fall through
+    user_key = (data.get('apiKey') or '').strip()
+    return user_key, False
 
 
 # ── Input length caps ─────────────────────────────────────────────────────────
