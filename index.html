@@ -383,6 +383,9 @@
       const [draftStatus, setDraftStatus] = useState('');
       const paperDraftFirstRender = useRef(true);
       const skipNextDraftSaveRef = useRef(false);
+      const paperOutputRef = useRef(null);
+      const paperSavedScrollTop = useRef(0);
+      const paperPrevContent = useRef(generatedPaper);
       
       // Humanizer state
       const [aiText, setAiText] = useState('');
@@ -479,6 +482,32 @@
         }
         setBibAppended(false);
       }, [generatedPaper]);
+
+      // Restore scroll position in the paper output area after every render.
+      // Only scroll to top when genuinely new paper content replaces the old content.
+      React.useLayoutEffect(() => {
+        const el = paperOutputRef.current;
+        if (!el) return;
+        const prev = paperPrevContent.current;
+        const next = generatedPaper;
+        if (next !== prev) {
+          // Determine if this is new/replaced content vs. appended content
+          const isAppend = next.startsWith(prev);
+          const isNewGeneration = !prev && next;
+          if (isNewGeneration || (!isAppend && next !== prev)) {
+            // Brand new or replaced paper — scroll to top
+            el.scrollTop = 0;
+            paperSavedScrollTop.current = 0;
+          } else {
+            // Appended content — restore saved position
+            el.scrollTop = paperSavedScrollTop.current;
+          }
+          paperPrevContent.current = next;
+        } else {
+          // Content unchanged, just a re-render — restore saved position
+          el.scrollTop = paperSavedScrollTop.current;
+        }
+      });
 
       // Keep export citation style in sync with the Bibliography tab selection
       useEffect(() => {
@@ -2371,7 +2400,12 @@ ${conceptEntries}
                       </button>
                     </div>
                   </div>
-                  <div className="p-4 rounded max-h-96 overflow-y-auto" style={{background: '#eff6ff', border: '2px solid #60a5fa', borderRadius: '10px'}}>
+                  <div
+                    ref={paperOutputRef}
+                    className="p-4 rounded max-h-96 overflow-y-auto"
+                    style={{background: '#eff6ff', border: '2px solid #60a5fa', borderRadius: '10px'}}
+                    onScroll={(e) => { paperSavedScrollTop.current = e.currentTarget.scrollTop; }}
+                  >
                     {generatedPaper}
                   </div>
 
