@@ -659,6 +659,184 @@
         }
       };
 
+      const glossaryImportRef = React.useRef(null);
+
+      const exportGlossaryCSV = () => {
+        if (glossary.length === 0) {
+          alert('Your glossary is empty. Nothing to export.');
+          return;
+        }
+        const escapeCSV = (val) => {
+          const str = (val || '').toString();
+          return str.includes(',') || str.includes('"') || str.includes('\n')
+            ? `"${str.replace(/"/g, '""')}"`
+            : str;
+        };
+        const header = ['Source Term', 'Target Term', 'Source Language', 'Target Language', 'Domain', 'Notes'];
+        const rows = glossary.map(e => [
+          escapeCSV(e.sourceTerm),
+          escapeCSV(e.targetTerm),
+          escapeCSV(e.sourceLang),
+          escapeCSV(e.targetLang),
+          escapeCSV(e.domain),
+          escapeCSV(e.notes)
+        ].join(','));
+        const csv = [header.join(','), ...rows].join('\r\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'glossary.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      const exportGlossaryTBX = () => {
+        if (glossary.length === 0) {
+          alert('Your glossary is empty. Nothing to export.');
+          return;
+        }
+        const esc = (str) => (str || '').toString()
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+        const conceptEntries = glossary.map((e, i) => {
+          const srcLang = e.sourceLang ? esc(e.sourceLang) : 'en';
+          const tgtLang = e.targetLang ? esc(e.targetLang) : 'xx';
+          const domainNote = e.domain ? `\n          <descrip type="subjectField">${esc(e.domain)}</descrip>` : '';
+          const notesNote = e.notes ? `\n          <note>${esc(e.notes)}</note>` : '';
+          return `      <conceptEntry id="c${i + 1}">${domainNote}${notesNote}
+        <langSec xml:lang="${srcLang}">
+          <termSec>
+            <term>${esc(e.sourceTerm)}</term>
+          </termSec>
+        </langSec>
+        <langSec xml:lang="${tgtLang}">
+          <termSec>
+            <term>${esc(e.targetTerm)}</term>
+          </termSec>
+        </langSec>
+      </conceptEntry>`;
+        }).join('\n');
+        const tbx = `<?xml version="1.0" encoding="UTF-8"?>
+<tbx type="TBX-Basic" style="dca" xml:lang="en" xmlns="urn:iso:std:iso:30042:ed-2">
+  <tbxHeader>
+    <fileDesc>
+      <titleStmt>
+        <title>Glossary Export</title>
+      </titleStmt>
+      <sourceDesc>
+        <p>Exported from Justlator on ${new Date().toISOString().split('T')[0]}</p>
+      </sourceDesc>
+    </fileDesc>
+  </tbxHeader>
+  <text>
+    <body>
+${conceptEntries}
+    </body>
+  </text>
+</tbx>`;
+        const blob = new Blob([tbx], { type: 'application/xml;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'glossary.tbx';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      const parseCSV = (text) => {
+        const rows = [];
+        let row = [];
+        let cur = '';
+        let inQuotes = false;
+        const normalised = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        for (let i = 0; i < normalised.length; i++) {
+          const ch = normalised[i];
+          if (inQuotes) {
+            if (ch === '"' && normalised[i + 1] === '"') { cur += '"'; i++; }
+            else if (ch === '"') { inQuotes = false; }
+            else { cur += ch; }
+          } else {
+            if (ch === '"') { inQuotes = true; }
+            else if (ch === ',') { row.push(cur); cur = ''; }
+            else if (ch === '\n') {
+              row.push(cur); cur = '';
+              if (row.some(f => f.trim())) rows.push(row);
+              row = [];
+            } else { cur += ch; }
+          }
+        }
+        row.push(cur);
+        if (row.some(f => f.trim())) rows.push(row);
+        return rows;
+      };
+
+      const importGlossaryCSV = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        e.target.value = '';
+        const text = await file.text();
+        const rows = parseCSV(text);
+        if (rows.length < 2) {
+          alert('CSV file appears to be empty or has no data rows.');
+          return;
+        }
+        const header = rows[0].map(h => h.trim().toLowerCase());
+        const srcTermIdx = header.findIndex(h => h.includes('source term') || h === 'sourceterm');
+        const tgtTermIdx = header.findIndex(h => h.includes('target term') || h === 'targetterm');
+        const srcLangIdx = header.findIndex(h => h.includes('source language') || h === 'sourcelang');
+        const tgtLangIdx = header.findIndex(h => h.includes('target language') || h === 'targetlang');
+        const domainIdx  = header.findIndex(h => h === 'domain');
+        const notesIdx   = header.findIndex(h => h === 'notes');
+        if (srcTermIdx === -1 || tgtTermIdx === -1) {
+          alert('CSV must have "Source Term" and "Target Term" columns.');
+          return;
+        }
+        const existingKeys = new Set(glossary.map(e => `${e.sourceTerm.trim().toLowerCase()}||${e.targetTerm.trim().toLowerCase()}`));
+        const newEntries = [];
+        for (let i = 1; i < rows.length; i++) {
+          const fields = rows[i];
+          const sourceTerm = (fields[srcTermIdx] || '').trim();
+          const targetTerm = (fields[tgtTermIdx] || '').trim();
+          if (!sourceTerm || !targetTerm) continue;
+          const key = `${sourceTerm.toLowerCase()}||${targetTerm.toLowerCase()}`;
+          if (existingKeys.has(key)) continue;
+          existingKeys.add(key);
+          const entry = {
+            id: `${Date.now()}_${i}`,
+            sourceTerm,
+            targetTerm,
+            sourceLang: srcLangIdx !== -1 ? (fields[srcLangIdx] || '').trim() : '',
+            targetLang: tgtLangIdx !== -1 ? (fields[tgtLangIdx] || '').trim() : '',
+            domain: domainIdx !== -1 ? (fields[domainIdx] || 'General').trim() : 'General',
+            notes: notesIdx !== -1 ? (fields[notesIdx] || '').trim() : '',
+            dateAdded: new Date().toISOString()
+          };
+          newEntries.push(entry);
+        }
+        if (newEntries.length === 0) {
+          alert('No new entries found. All rows already exist in your glossary (matched by source + target term).');
+          return;
+        }
+        try {
+          if (typeof window.storage !== 'undefined') {
+            await Promise.all(newEntries.map(entry =>
+              window.storage.set(`glossary:${entry.id}`, JSON.stringify(entry))
+            ));
+          }
+          setGlossary(prev => [...prev, ...newEntries]);
+          alert(`Successfully imported ${newEntries.length} new ${newEntries.length === 1 ? 'entry' : 'entries'}.`);
+        } catch (err) {
+          alert('Error saving imported entries: ' + err.message);
+        }
+      };
+
       const filteredGlossary = glossary.filter(entry => {
         if (!glossarySearch) return true;
         const q = glossarySearch.toLowerCase();
@@ -1500,7 +1678,39 @@
 
         {activeTab === 'glossary' && (
           <div>
-            <h2 className="text-3xl font-bold mb-6" style={{color: 'var(--accent-primary)'}}>📖 Translation Glossary</h2>
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '24px'}}>
+              <h2 className="text-3xl font-bold" style={{color: 'var(--accent-primary)'}}>📖 Translation Glossary</h2>
+              <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+                <button
+                  onClick={exportGlossaryCSV}
+                  title="Download all entries as a CSV file"
+                  style={{padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', border: '2px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px'}}
+                >
+                  ⬇️ Export CSV
+                </button>
+                <button
+                  onClick={exportGlossaryTBX}
+                  title="Download all entries as a TBX file (compatible with CAT tools)"
+                  style={{padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', border: '2px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px'}}
+                >
+                  ⬇️ Export TBX
+                </button>
+                <button
+                  onClick={() => glossaryImportRef.current && glossaryImportRef.current.click()}
+                  title="Import entries from a CSV file"
+                  style={{padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', border: '2px solid var(--accent-primary)', background: 'rgba(126,161,252,0.1)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px'}}
+                >
+                  ⬆️ Import CSV
+                </button>
+                <input
+                  ref={glossaryImportRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  style={{display: 'none'}}
+                  onChange={importGlossaryCSV}
+                />
+              </div>
+            </div>
 
             {/* Add Entry Form */}
             <div style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px', padding: '24px', marginBottom: '24px'}}>
