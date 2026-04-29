@@ -794,6 +794,13 @@
           }
           setGlossary([...glossary, entry]);
           setNewGlossaryEntry({ sourceTerm: '', targetTerm: '', sourceLang: '', targetLang: '', domain: 'General', notes: '' });
+          if (glossaryCustomOrder.length > 0) {
+            const updatedOrder = [...glossaryCustomOrder, entry.id];
+            setGlossaryCustomOrder(updatedOrder);
+            if (typeof window.storage !== 'undefined') {
+              window.storage.set('settings:glossary-order', JSON.stringify(updatedOrder)).catch(() => {});
+            }
+          }
         } catch (error) {
           alert('Error saving glossary entry: ' + error.message);
         }
@@ -806,6 +813,13 @@
             await window.storage.delete(`glossary:${id}`);
           }
           setGlossary(glossary.filter(e => e.id !== id));
+          if (glossaryCustomOrder.length > 0) {
+            const updatedOrder = glossaryCustomOrder.filter(oid => oid !== id);
+            setGlossaryCustomOrder(updatedOrder);
+            if (typeof window.storage !== 'undefined') {
+              window.storage.set('settings:glossary-order', JSON.stringify(updatedOrder)).catch(() => {});
+            }
+          }
         } catch (error) {
           alert('Error deleting entry: ' + error.message);
         }
@@ -1031,6 +1045,13 @@ ${conceptEntries}
             ));
           }
           setGlossary(prev => [...prev, ...newEntries]);
+          if (glossaryCustomOrder.length > 0) {
+            const updatedOrder = [...glossaryCustomOrder, ...newEntries.map(e => e.id)];
+            setGlossaryCustomOrder(updatedOrder);
+            if (typeof window.storage !== 'undefined') {
+              window.storage.set('settings:glossary-order', JSON.stringify(updatedOrder)).catch(() => {});
+            }
+          }
           alert(`Successfully imported ${newEntries.length} new ${newEntries.length === 1 ? 'entry' : 'entries'}.`);
         } catch (err) {
           alert('Error saving imported entries: ' + err.message);
