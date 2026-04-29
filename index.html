@@ -507,6 +507,9 @@
         notes: ''
       });
       const [glossarySearch, setGlossarySearch] = useState('');
+      const [glossaryDomainFilter, setGlossaryDomainFilter] = useState('');
+      const [glossaryLangFilter, setGlossaryLangFilter] = useState('');
+      const [glossarySort, setGlossarySort] = useState('recent');
       const [copiedGlossaryId, setCopiedGlossaryId] = useState(null);
 
       useEffect(() => {
@@ -840,18 +843,46 @@ ${conceptEntries}
         }
       };
 
-      const filteredGlossary = glossary.filter(entry => {
-        if (!glossarySearch) return true;
-        const q = glossarySearch.toLowerCase();
-        return (
-          entry.sourceTerm.toLowerCase().includes(q) ||
-          entry.targetTerm.toLowerCase().includes(q) ||
-          (entry.sourceLang && entry.sourceLang.toLowerCase().includes(q)) ||
-          (entry.targetLang && entry.targetLang.toLowerCase().includes(q)) ||
-          (entry.domain && entry.domain.toLowerCase().includes(q)) ||
-          (entry.notes && entry.notes.toLowerCase().includes(q))
-        );
-      });
+      const glossaryDomainOptions = [...new Set(glossary.map(e => e.domain || 'General').filter(Boolean))].sort();
+      const glossaryLangPairOptions = [...new Set(glossary.filter(e => e.sourceLang && e.targetLang).map(e => `${e.sourceLang} → ${e.targetLang}`))].sort();
+
+      const filteredGlossary = (() => {
+        let results = glossary.filter(entry => {
+          if (glossarySearch) {
+            const q = glossarySearch.toLowerCase();
+            const matchesText = (
+              entry.sourceTerm.toLowerCase().includes(q) ||
+              entry.targetTerm.toLowerCase().includes(q) ||
+              (entry.sourceLang && entry.sourceLang.toLowerCase().includes(q)) ||
+              (entry.targetLang && entry.targetLang.toLowerCase().includes(q)) ||
+              (entry.domain && entry.domain.toLowerCase().includes(q)) ||
+              (entry.notes && entry.notes.toLowerCase().includes(q))
+            );
+            if (!matchesText) return false;
+          }
+          if (glossaryDomainFilter) {
+            const entryDomain = entry.domain || 'General';
+            if (entryDomain !== glossaryDomainFilter) return false;
+          }
+          if (glossaryLangFilter) {
+            const pair = `${entry.sourceLang || ''} → ${entry.targetLang || ''}`;
+            if (pair !== glossaryLangFilter) return false;
+          }
+          return true;
+        });
+        if (glossarySort === 'az') {
+          results = [...results].sort((a, b) => a.sourceTerm.localeCompare(b.sourceTerm));
+        } else if (glossarySort === 'za') {
+          results = [...results].sort((a, b) => b.sourceTerm.localeCompare(a.sourceTerm));
+        } else {
+          results = [...results].sort((a, b) => {
+            const da = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
+            const db = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
+            return db - da;
+          });
+        }
+        return results;
+      })();
 
       const addSource = async () => {
         if (!newSource.title || !newSource.author) {
@@ -1802,8 +1833,8 @@ ${conceptEntries}
               </button>
             </div>
 
-            {/* Search */}
-            <div style={{marginBottom: '20px'}}>
+            {/* Search & Filters */}
+            <div style={{marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px'}}>
               <input
                 type="text"
                 dir={textDir}
@@ -1812,6 +1843,45 @@ ${conceptEntries}
                 placeholder="🔍 Search by term, language, or domain..."
                 style={{width: '100%', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '12px', background: 'var(--bg-card)', color: 'var(--text-primary)', ...inputDirStyle}}
               />
+              <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap'}}>
+                <select
+                  value={glossaryDomainFilter}
+                  onChange={(e) => setGlossaryDomainFilter(e.target.value)}
+                  style={{flex: '1', minWidth: '140px', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-card)', color: glossaryDomainFilter ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize: '14px', cursor: 'pointer'}}
+                >
+                  <option value="">All Domains</option>
+                  {glossaryDomainOptions.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+                <select
+                  value={glossaryLangFilter}
+                  onChange={(e) => setGlossaryLangFilter(e.target.value)}
+                  style={{flex: '1', minWidth: '160px', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-card)', color: glossaryLangFilter ? 'var(--text-primary)' : 'var(--text-secondary)', fontSize: '14px', cursor: 'pointer'}}
+                >
+                  <option value="">All Language Pairs</option>
+                  {glossaryLangPairOptions.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <select
+                  value={glossarySort}
+                  onChange={(e) => setGlossarySort(e.target.value)}
+                  style={{flex: '1', minWidth: '160px', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '8px 12px', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '14px', cursor: 'pointer'}}
+                >
+                  <option value="recent">Most Recently Added</option>
+                  <option value="az">Source Term A → Z</option>
+                  <option value="za">Source Term Z → A</option>
+                </select>
+              </div>
+              {(glossaryDomainFilter || glossaryLangFilter) && (
+                <button
+                  onClick={() => { setGlossaryDomainFilter(''); setGlossaryLangFilter(''); }}
+                  style={{alignSelf: 'flex-start', background: 'none', border: 'none', color: 'var(--accent-primary)', fontSize: '13px', fontWeight: '600', cursor: 'pointer', padding: '0'}}
+                >
+                  ✕ Clear filters
+                </button>
+              )}
             </div>
 
             {/* Entries list */}
@@ -1821,13 +1891,13 @@ ${conceptEntries}
               <div style={{textAlign: 'center', padding: '40px', color: 'var(--text-secondary)'}}>
                 <div style={{fontSize: '48px', marginBottom: '12px'}}>📖</div>
                 <p style={{fontWeight: '600'}}>
-                  {glossarySearch ? 'No entries match your search.' : 'Your glossary is empty. Add your first term pair above!'}
+                  {(glossarySearch || glossaryDomainFilter || glossaryLangFilter) ? 'No entries match your filters.' : 'Your glossary is empty. Add your first term pair above!'}
                 </p>
               </div>
             ) : (
               <div>
                 <p style={{fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '12px'}}>
-                  {filteredGlossary.length} {filteredGlossary.length === 1 ? 'entry' : 'entries'}{glossarySearch ? ' found' : ' total'}
+                  {filteredGlossary.length} {filteredGlossary.length === 1 ? 'entry' : 'entries'}{(glossarySearch || glossaryDomainFilter || glossaryLangFilter) ? ' found' : ' total'}
                 </p>
                 <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
                   {filteredGlossary.map(entry => (
