@@ -343,6 +343,11 @@
       const [activeTab, setActiveTab] = useState('guide');
       const [knowledgeBase, setKnowledgeBase] = useState([]);
       const [loading, setLoading] = useState(false);
+      const [claudeApiKey, setClaudeApiKey] = useState(() => {
+        try { return localStorage.getItem('justlator-claude-key') || ''; } catch(e) { return ''; }
+      });
+      const [claudeKeyInput, setClaudeKeyInput] = useState('');
+      const [claudeApiError, setClaudeApiError] = useState('');
       const [loadingKB, setLoadingKB] = useState(true);
       
       // Knowledge Base state
@@ -488,6 +493,108 @@
         setGeneratedPaper('');
         setDraftStatus('');
         setBibAppended(false);
+      };
+
+      // Save Claude API key to localStorage
+      const saveClaudeKey = (key) => {
+        const trimmed = key.trim();
+        setClaudeApiKey(trimmed);
+        setClaudeKeyInput('');
+        setClaudeApiError('');
+        try { localStorage.setItem('justlator-claude-key', trimmed); } catch(e) {}
+      };
+
+      // Update usage meter after an AI call
+      const updateUsage = (inputTokens, outputTokens) => {
+        const cost = (inputTokens * 0.0000008) + (outputTokens * 0.000004);
+        setSessionTokens(prev => prev + inputTokens + outputTokens);
+        setSessionCost(prev => prev + cost);
+      };
+
+      // AI: Humanize text
+      const handleHumanize = async () => {
+        if (!claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
+        if (!aiText.trim()) { setClaudeApiError('Please paste some text to humanize'); return; }
+        setLoading(true);
+        setClaudeApiError('');
+        setHumanizedText('');
+        try {
+          const res = await fetch('/api/humanize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: aiText, apiKey: claudeApiKey })
+          });
+          const data = await res.json();
+          if (!res.ok) { setClaudeApiError(data.error || 'Something went wrong'); return; }
+          setHumanizedText(data.result);
+          updateUsage(data.inputTokens || 0, data.outputTokens || 0);
+        } catch(e) {
+          setClaudeApiError('Could not reach the server. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // AI: Generate paper section
+      const handleWrite = async () => {
+        if (!claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
+        if (!paperTopic.trim()) { setClaudeApiError('Please enter a research topic'); return; }
+        setLoading(true);
+        setClaudeApiError('');
+        try {
+          const sourcesData = knowledgeBase.map(s => ({
+            title: s.title, author: s.author, year: s.year, type: s.type
+          }));
+          const res = await fetch('/api/write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              topic: paperTopic,
+              section: paperSection,
+              notes: paperNotes,
+              sources: sourcesData,
+              existing: generatedPaper,
+              apiKey: claudeApiKey
+            })
+          });
+          const data = await res.json();
+          if (!res.ok) { setClaudeApiError(data.error || 'Something went wrong'); return; }
+          if (generatedPaper) {
+            setGeneratedPaper(prev => prev + '\n\n' + data.result);
+          } else {
+            setGeneratedPaper(data.result);
+          }
+          setBibAppended(false);
+          updateUsage(data.inputTokens || 0, data.outputTokens || 0);
+        } catch(e) {
+          setClaudeApiError('Could not reach the server. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      // AI: Check similarity
+      const handleSimilarity = async () => {
+        if (!claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
+        if (!text1.trim() || !text2.trim()) { setClaudeApiError('Please provide both texts to compare'); return; }
+        setLoading(true);
+        setClaudeApiError('');
+        setSimilarityResult('');
+        try {
+          const res = await fetch('/api/similarity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text1, text2, apiKey: claudeApiKey })
+          });
+          const data = await res.json();
+          if (!res.ok) { setClaudeApiError(data.error || 'Something went wrong'); return; }
+          setSimilarityResult(data.result);
+          updateUsage(data.inputTokens || 0, data.outputTokens || 0);
+        } catch(e) {
+          setClaudeApiError('Could not reach the server. Please try again.');
+        } finally {
+          setLoading(false);
+        }
       };
 
       const inputDirStyle = {
@@ -1959,11 +2066,26 @@ ${conceptEntries}
           <div>
             <h2 className="text-3xl font-bold mb-6" style={{color: 'var(--accent-primary)'}}>✨ AI Humanizer</h2>
             <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
-              <div className="mb-4 p-4 rounded" style={{background: 'rgba(126, 161, 252, 0.1)', border: '2px solid var(--accent-primary)', borderRadius: '10px'}}>
-                <strong>🌐 Internet Connection Required</strong>
-                <p className="text-sm mt-2">This feature needs internet to access AI capabilities.</p>
+              {/* API Key setup */}
+              <div className="mb-4 p-3 rounded" style={{background: claudeApiKey ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${claudeApiKey ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
+                {claudeApiKey ? (
+                  <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved</span>
+                    <button onClick={() => { setClaudeApiKey(''); try { localStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{fontSize: '13px', fontWeight: '600', color: '#92400e', marginBottom: '8px'}}>
+                      🔑 Enter your Claude API key — <a href="https://console.anthropic.com" target="_blank" style={{color: 'var(--accent-primary)'}}>get one free at console.anthropic.com</a>
+                    </p>
+                    <div style={{display: 'flex', gap: '8px'}}>
+                      <input type="password" value={claudeKeyInput} onChange={e => setClaudeKeyInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && claudeKeyInput.trim() && saveClaudeKey(claudeKeyInput)} placeholder="sk-ant-..." style={{flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '13px', background: 'var(--bg-secondary)', color: 'var(--text-primary)'}} />
+                      <button onClick={() => saveClaudeKey(claudeKeyInput)} disabled={!claudeKeyInput.trim()} style={{padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', fontWeight: '700', fontSize: '13px', cursor: claudeKeyInput.trim() ? 'pointer' : 'default', opacity: claudeKeyInput.trim() ? 1 : 0.5}}>Save</button>
+                    </div>
+                  </div>
+                )}
               </div>
-              
+
               <div className="mb-4">
                 <label className="block font-medium mb-2">AI-Generated Text to Humanize</label>
                 <textarea
@@ -1977,13 +2099,18 @@ ${conceptEntries}
               </div>
               
               <button
-                onClick={() => alert('Full API integration required for this feature')}
+                onClick={handleHumanize}
                 disabled={loading}
                 className="w-full py-3 px-6 rounded font-medium"
-                style={{background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '14px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', border: 'none'}}
+                style={{background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '14px', borderRadius: '10px', fontWeight: '600', cursor: loading ? 'wait' : 'pointer', border: 'none', opacity: loading ? 0.8 : 1}}
               >
                 {loading ? 'Humanizing...' : 'Humanize Text'}
               </button>
+              {claudeApiError && (
+                <div style={{marginTop: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', color: '#dc2626', fontSize: '13px', fontWeight: '600'}}>
+                  ⚠️ {claudeApiError}
+                </div>
+              )}
 
               {humanizedText && (
                 <div className="mt-6">
@@ -2045,12 +2172,32 @@ ${conceptEntries}
             )}
 
             <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
+              {/* API Key setup */}
+              <div className="mb-4 p-3 rounded" style={{background: claudeApiKey ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${claudeApiKey ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
+                {claudeApiKey ? (
+                  <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved</span>
+                    <button onClick={() => { setClaudeApiKey(''); try { localStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{fontSize: '13px', fontWeight: '600', color: '#92400e', marginBottom: '8px'}}>
+                      🔑 Enter your Claude API key — <a href="https://console.anthropic.com" target="_blank" style={{color: 'var(--accent-primary)'}}>get one free at console.anthropic.com</a>
+                    </p>
+                    <div style={{display: 'flex', gap: '8px'}}>
+                      <input type="password" value={claudeKeyInput} onChange={e => setClaudeKeyInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && claudeKeyInput.trim() && saveClaudeKey(claudeKeyInput)} placeholder="sk-ant-..." style={{flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '13px', background: 'var(--bg-secondary)', color: 'var(--text-primary)'}} />
+                      <button onClick={() => saveClaudeKey(claudeKeyInput)} disabled={!claudeKeyInput.trim()} style={{padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', fontWeight: '700', fontSize: '13px', cursor: claudeKeyInput.trim() ? 'pointer' : 'default', opacity: claudeKeyInput.trim() ? 1 : 0.5}}>Save</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="mb-4 p-4 rounded" style={{background: 'rgba(126, 161, 252, 0.1)', border: '2px solid var(--accent-primary)', borderRadius: '10px'}}>
                 <strong>📄 Unlimited Page Generation!</strong>
                 <ul className="text-sm mt-2 space-y-1">
                   <li>• Each generation: up to ~12 pages</li>
-                  <li>• Click "Continue Writing" to extend to 24+ pages</li>
-                  <li>• Smart chunking uses your knowledge base</li>
+                  <li>• Click "Generate Section" again on existing content to continue writing</li>
+                  <li>• Smart prompting uses your knowledge base sources</li>
                 </ul>
               </div>
 
@@ -2127,13 +2274,18 @@ ${conceptEntries}
               </div>
 
               <button
-                onClick={() => alert('Full API integration required for this feature')}
+                onClick={handleWrite}
                 disabled={loading}
-                className="w-full py-3 px-6 rounded font-medium mb-4"
-                style={{background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '14px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', border: 'none'}}
+                className="w-full py-3 px-6 rounded font-medium mb-2"
+                style={{background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '14px', borderRadius: '10px', fontWeight: '600', cursor: loading ? 'wait' : 'pointer', border: 'none', opacity: loading ? 0.8 : 1}}
               >
-                {loading ? 'Generating...' : 'Generate Section'}
+                {loading ? 'Generating...' : (generatedPaper ? '✍️ Continue Writing' : '✍️ Generate Section')}
               </button>
+              {claudeApiError && (
+                <div style={{marginBottom: '8px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', color: '#dc2626', fontSize: '13px', fontWeight: '600'}}>
+                  ⚠️ {claudeApiError}
+                </div>
+              )}
 
               <button
                 onClick={() => {
@@ -2382,6 +2534,26 @@ ${conceptEntries}
           <div>
             <h2 className="text-3xl font-bold mb-6" style={{color: 'var(--accent-primary)'}}>🔍 Similarity Checker</h2>
             <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
+              {/* API Key setup */}
+              <div className="mb-4 p-3 rounded" style={{background: claudeApiKey ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${claudeApiKey ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
+                {claudeApiKey ? (
+                  <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved</span>
+                    <button onClick={() => { setClaudeApiKey(''); try { localStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{fontSize: '13px', fontWeight: '600', color: '#92400e', marginBottom: '8px'}}>
+                      🔑 Enter your Claude API key — <a href="https://console.anthropic.com" target="_blank" style={{color: 'var(--accent-primary)'}}>get one free at console.anthropic.com</a>
+                    </p>
+                    <div style={{display: 'flex', gap: '8px'}}>
+                      <input type="password" value={claudeKeyInput} onChange={e => setClaudeKeyInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && claudeKeyInput.trim() && saveClaudeKey(claudeKeyInput)} placeholder="sk-ant-..." style={{flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '13px', background: 'var(--bg-secondary)', color: 'var(--text-primary)'}} />
+                      <button onClick={() => saveClaudeKey(claudeKeyInput)} disabled={!claudeKeyInput.trim()} style={{padding: '8px 16px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', fontWeight: '700', fontSize: '13px', cursor: claudeKeyInput.trim() ? 'pointer' : 'default', opacity: claudeKeyInput.trim() ? 1 : 0.5}}>Save</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="mb-4 p-4 rounded" style={{background: '#fef3c7', border: '2px solid #fbbf24', borderRadius: '10px'}}>
                 <strong>⚠️ Note:</strong> This is a basic similarity tool, NOT a full plagiarism checker. Use Turnitin or iThenticate for comprehensive checks.
               </div>
@@ -2411,13 +2583,18 @@ ${conceptEntries}
               </div>
 
               <button
-                onClick={() => alert('Full API integration required for this feature')}
+                onClick={handleSimilarity}
                 disabled={loading}
                 className="w-full py-3 px-6 rounded font-medium"
-                style={{background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '14px', borderRadius: '10px', fontWeight: '600', cursor: 'pointer', border: 'none'}}
+                style={{background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', padding: '14px', borderRadius: '10px', fontWeight: '600', cursor: loading ? 'wait' : 'pointer', border: 'none', opacity: loading ? 0.8 : 1}}
               >
                 {loading ? 'Analyzing...' : 'Check Similarity'}
               </button>
+              {claudeApiError && (
+                <div style={{marginTop: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', color: '#dc2626', fontSize: '13px', fontWeight: '600'}}>
+                  ⚠️ {claudeApiError}
+                </div>
+              )}
 
               {similarityResult && (
                 <div className="mt-6">
