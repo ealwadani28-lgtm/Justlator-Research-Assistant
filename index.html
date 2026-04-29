@@ -408,6 +408,7 @@
       const [bibFormat, setBibFormat] = useState('APA');
       const [bibliographyList, setBibliographyList] = useState([]);
       const [bibCopied, setBibCopied] = useState(false);
+      const [writerBibCopied, setWriterBibCopied] = useState(false);
 
       // Paper Writer citation style (for inline bibliography)
       const [writerCitationStyle, setWriterCitationStyle] = useState('APA');
@@ -2422,32 +2423,67 @@ ${conceptEntries}
                               {bibEntries.length} source{bibEntries.length !== 1 ? 's' : ''} • {writerCitationStyle} format
                             </span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const heading = '\n\n---\n\nReferences\n\n';
-                              const body = bibEntries.join('\n\n');
-                              skipBibResetRef.current = true;
-                              setGeneratedPaper(prev => prev + heading + body);
-                              setBibAppended(true);
-                            }}
-                            disabled={bibAppended}
-                            style={{
-                              padding: '8px 18px',
-                              borderRadius: '8px',
-                              fontWeight: '700',
-                              fontSize: '13px',
-                              cursor: bibAppended ? 'default' : 'pointer',
-                              border: 'none',
-                              background: bibAppended
-                                ? 'linear-gradient(135deg, #22c55e, #16a34a)'
-                                : 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
-                              color: 'white',
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            {bibAppended ? '✓ Appended to Paper' : '⊕ Append to Paper'}
-                          </button>
+                          <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const text = bibEntries.join('\n\n');
+                                const finish = () => { setWriterBibCopied(true); setTimeout(() => setWriterBibCopied(false), 2000); };
+                                if (navigator.clipboard && navigator.clipboard.writeText) {
+                                  navigator.clipboard.writeText(text).then(finish).catch(() => {
+                                    const el = document.createElement('textarea');
+                                    el.value = text; document.body.appendChild(el); el.select();
+                                    document.execCommand('copy'); document.body.removeChild(el); finish();
+                                  });
+                                } else {
+                                  const el = document.createElement('textarea');
+                                  el.value = text; document.body.appendChild(el); el.select();
+                                  document.execCommand('copy'); document.body.removeChild(el); finish();
+                                }
+                              }}
+                              style={{
+                                padding: '8px 14px',
+                                borderRadius: '8px',
+                                fontWeight: '700',
+                                fontSize: '13px',
+                                cursor: 'pointer',
+                                border: '1px solid var(--border-color)',
+                                background: writerBibCopied
+                                  ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+                                  : 'var(--bg-secondary)',
+                                color: writerBibCopied ? 'white' : 'var(--text-primary)',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              {writerBibCopied ? '✓ Copied!' : '📋 Copy'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const heading = '\n\n---\n\nReferences\n\n';
+                                const body = bibEntries.join('\n\n');
+                                skipBibResetRef.current = true;
+                                setGeneratedPaper(prev => prev + heading + body);
+                                setBibAppended(true);
+                              }}
+                              disabled={bibAppended}
+                              style={{
+                                padding: '8px 18px',
+                                borderRadius: '8px',
+                                fontWeight: '700',
+                                fontSize: '13px',
+                                cursor: bibAppended ? 'default' : 'pointer',
+                                border: 'none',
+                                background: bibAppended
+                                  ? 'linear-gradient(135deg, #22c55e, #16a34a)'
+                                  : 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+                                color: 'white',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              {bibAppended ? '✓ Appended to Paper' : '⊕ Append to Paper'}
+                            </button>
+                          </div>
                         </div>
                         <div style={{padding: '16px 20px', background: 'var(--bg-card)', maxHeight: '260px', overflowY: 'auto'}}>
                           {bibEntries.map((entry, i) => (
