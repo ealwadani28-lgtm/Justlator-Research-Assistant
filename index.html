@@ -1239,6 +1239,14 @@ ${conceptEntries}
         }
       };
 
+      const resetGlossaryOrder = () => {
+        setGlossaryCustomOrder([]);
+        setGlossarySort('recent');
+        if (typeof window.storage !== 'undefined') {
+          window.storage.delete('settings:glossary-order').catch(() => {});
+        }
+      };
+
       const addSource = async () => {
         if (!newSource.title || !newSource.author) {
           alert('Please fill in at least title and author');
@@ -2244,13 +2252,25 @@ ${conceptEntries}
                   {glossaryCustomOrder.length > 0 && <option value="custom">Custom Order</option>}
                 </select>
               </div>
-              {(glossaryDomainFilter || glossaryLangFilter) && (
-                <button
-                  onClick={() => { setGlossaryDomainFilter(''); setGlossaryLangFilter(''); }}
-                  style={{alignSelf: 'flex-start', background: 'none', border: 'none', color: 'var(--accent-primary)', fontSize: '13px', fontWeight: '600', cursor: 'pointer', padding: '0'}}
-                >
-                  ✕ Clear filters
-                </button>
+              {((glossaryDomainFilter || glossaryLangFilter) || glossarySort === 'custom') && (
+                <div style={{display: 'flex', gap: '16px', flexWrap: 'wrap', alignSelf: 'flex-start'}}>
+                  {(glossaryDomainFilter || glossaryLangFilter) && (
+                    <button
+                      onClick={() => { setGlossaryDomainFilter(''); setGlossaryLangFilter(''); }}
+                      style={{background: 'none', border: 'none', color: 'var(--accent-primary)', fontSize: '13px', fontWeight: '600', cursor: 'pointer', padding: '0'}}
+                    >
+                      ✕ Clear filters
+                    </button>
+                  )}
+                  {glossarySort === 'custom' && (
+                    <button
+                      onClick={resetGlossaryOrder}
+                      style={{background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '13px', fontWeight: '600', cursor: 'pointer', padding: '0'}}
+                    >
+                      ↺ Reset order
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
