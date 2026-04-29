@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, session
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import anthropic
 import os
@@ -11,12 +11,6 @@ from collections import defaultdict
 # .replit, replit.md and every other project file as public downloads.
 app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # reject bodies > 1 MB
-
-# ── Session secret ────────────────────────────────────────────────────────────
-# If FLASK_SECRET_KEY is set in the environment, use it (survives restarts).
-# Otherwise generate a fresh random key — sessions issued before a restart
-# will be invalid, which is acceptable for this app's usage pattern.
-app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
 # Restrict to the Replit preview domain and localhost only.
@@ -43,6 +37,21 @@ def _rate_limit_ok(ip: str) -> bool:
     return True
 
 
+def _replit_user_id() -> str:
+    """Return the authenticated Replit user ID for this request, or ''.
+
+    Replit's reverse proxy authenticates users and injects X-Replit-User-Id
+    (and companion headers) into every request before forwarding to the app.
+    This header is stripped from raw client requests by the proxy, so it
+    cannot be spoofed by external callers. When running outside Replit's proxy
+    (e.g. on localhost) the header is simply absent, which is safe.
+
+    Enabling Replit Auth in the project settings is a prerequisite for this
+    header to be present in production requests.
+    """
+    return request.headers.get('X-Replit-User-Id', '').strip()
+
+
 @app.after_request
 def no_cache(response):
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -53,42 +62,33 @@ def no_cache(response):
 
 @app.route('/')
 def index():
-    """Serve the app and establish a signed server-side session on first load.
-
-    The session acts as the credential that proves a request came from a real
-    browser that loaded the UI.  Without a valid session the server-side
-    ANTHROPIC_API_KEY is never used, so anonymous HTTP clients (curl/bots)
-    cannot spend server credits even when they know the endpoint URLs.
-    """
-    if 'sid' not in session:
-        session['sid'] = secrets.token_hex(16)
-        session.permanent = False  # expires when the browser tab is closed
     return send_file('index.html')
-
-
-def _has_valid_session() -> bool:
-    """Return True only when the request carries a valid signed session cookie."""
-    return bool(session.get('sid'))
 
 
 @app.route('/api/config', methods=['GET'])
 def config():
-    """Tell the frontend whether a server-side API key is configured."""
-    has_server_key = bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())
+    """Tell the frontend whether the server-side API key is usable.
+
+    The server key is only advertised as available when the current request
+    comes from an authenticated Replit user (X-Replit-User-Id is set by
+    Replit's proxy). Anonymous callers see hasServerKey=false and must supply
+    their own Claude API key.
+    """
+    server_key = bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())
+    # Server key is only usable when the caller is authenticated via Replit Auth.
+    has_server_key = server_key and bool(_replit_user_id())
     return jsonify({'hasServerKey': has_server_key})
 
 
 def _get_api_key(data):
-    """
-    Return (api_key, is_server_key).
+    """Return (api_key, is_server_key).
 
-    Server-side ANTHROPIC_API_KEY is used only when the caller has a valid
-    signed session (i.e. loaded the page through the Flask app).  Without a
-    session the server key is never used; the call either uses the user's own
-    API key or fails with 'no key configured'.
+    The server-side ANTHROPIC_API_KEY is used only when the caller has been
+    authenticated by Replit's proxy (X-Replit-User-Id header present).
+    Anonymous callers use their own user-supplied key or receive a 400.
     """
     server_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
-    if server_key and _has_valid_session():
+    if server_key and _replit_user_id():
         return server_key, True
     user_key = (data.get('apiKey') or '').strip()
     return user_key, False
