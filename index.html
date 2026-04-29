@@ -674,6 +674,9 @@
       const [copiedGlossaryId, setCopiedGlossaryId] = useState(null);
       const [editingGlossaryId, setEditingGlossaryId] = useState(null);
       const [editGlossaryDraft, setEditGlossaryDraft] = useState({});
+      const [glossaryCustomOrder, setGlossaryCustomOrder] = useState([]);
+      const [draggingId, setDraggingId] = useState(null);
+      const [dragOverId, setDragOverId] = useState(null);
 
       useEffect(() => {
         if (!citeDropdown) return;
@@ -758,6 +761,14 @@
             );
             setGlossary(entries.filter(e => e !== null));
           }
+          try {
+            const orderData = await window.storage.get('settings:glossary-order');
+            if (orderData && orderData.value) {
+              const order = JSON.parse(orderData.value);
+              setGlossaryCustomOrder(order);
+              setGlossarySort('custom');
+            }
+          } catch (e) {}
         } catch (error) {
           console.log('Glossary storage not available');
         } finally {
@@ -1055,6 +1066,14 @@ ${conceptEntries}
           results = [...results].sort((a, b) => a.sourceTerm.localeCompare(b.sourceTerm));
         } else if (glossarySort === 'za') {
           results = [...results].sort((a, b) => b.sourceTerm.localeCompare(a.sourceTerm));
+        } else if (glossarySort === 'custom' && glossaryCustomOrder.length > 0) {
+          const orderMap = {};
+          glossaryCustomOrder.forEach((id, idx) => { orderMap[id] = idx; });
+          results = [...results].sort((a, b) => {
+            const ia = orderMap[a.id] !== undefined ? orderMap[a.id] : 999999;
+            const ib = orderMap[b.id] !== undefined ? orderMap[b.id] : 999999;
+            return ia - ib;
+          });
         } else {
           results = [...results].sort((a, b) => {
             const da = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
@@ -1064,6 +1083,37 @@ ${conceptEntries}
         }
         return results;
       })();
+
+      const handleGlossaryDrop = (targetId) => {
+        if (!draggingId || draggingId === targetId) {
+          setDraggingId(null);
+          setDragOverId(null);
+          return;
+        }
+        const displayIds = filteredGlossary.map(e => e.id);
+        const srcIdx = displayIds.indexOf(draggingId);
+        const tgtIdx = displayIds.indexOf(targetId);
+        if (srcIdx === -1 || tgtIdx === -1) { setDraggingId(null); setDragOverId(null); return; }
+        const newDisplayIds = [...displayIds];
+        newDisplayIds.splice(srcIdx, 1);
+        newDisplayIds.splice(tgtIdx, 0, draggingId);
+        const baseOrder = glossaryCustomOrder.length > 0 ? glossaryCustomOrder : glossary.map(e => e.id);
+        const newFullOrder = [...baseOrder];
+        let ptr = 0;
+        for (let i = 0; i < newFullOrder.length; i++) {
+          if (displayIds.includes(newFullOrder[i])) {
+            newFullOrder[i] = newDisplayIds[ptr++];
+          }
+        }
+        glossary.forEach(e => { if (!newFullOrder.includes(e.id)) newFullOrder.push(e.id); });
+        setGlossaryCustomOrder(newFullOrder);
+        setGlossarySort('custom');
+        setDraggingId(null);
+        setDragOverId(null);
+        if (typeof window.storage !== 'undefined') {
+          window.storage.set('settings:glossary-order', JSON.stringify(newFullOrder)).catch(() => {});
+        }
+      };
 
       const addSource = async () => {
         if (!newSource.title || !newSource.author) {
@@ -2053,6 +2103,7 @@ ${conceptEntries}
                   <option value="recent">Most Recently Added</option>
                   <option value="az">Source Term A → Z</option>
                   <option value="za">Source Term Z → A</option>
+                  {glossaryCustomOrder.length > 0 && <option value="custom">Custom Order</option>}
                 </select>
               </div>
               {(glossaryDomainFilter || glossaryLangFilter) && (
@@ -2082,7 +2133,23 @@ ${conceptEntries}
                 </p>
                 <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
                   {filteredGlossary.map(entry => (
-                    <div key={entry.id} style={{background: 'var(--bg-card)', border: `2px solid ${editingGlossaryId === entry.id ? 'var(--accent-primary)' : 'var(--border-color)'}`, borderRadius: '12px', padding: '16px'}}>
+                    <div
+                      key={entry.id}
+                      draggable={editingGlossaryId !== entry.id}
+                      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDraggingId(entry.id); }}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverId !== entry.id) setDragOverId(entry.id); }}
+                      onDrop={(e) => { e.preventDefault(); handleGlossaryDrop(entry.id); }}
+                      onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
+                      style={{
+                        background: 'var(--bg-card)',
+                        border: `2px solid ${editingGlossaryId === entry.id ? 'var(--accent-primary)' : dragOverId === entry.id && draggingId !== entry.id ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                        borderRadius: '12px',
+                        padding: '16px',
+                        opacity: draggingId === entry.id ? 0.45 : 1,
+                        transition: 'opacity 0.15s, border-color 0.15s',
+                        cursor: editingGlossaryId === entry.id ? 'default' : 'grab'
+                      }}
+                    >
                       {editingGlossaryId === entry.id ? (
                         /* ── EDIT MODE ── */
                         <div>
@@ -2161,6 +2228,7 @@ ${conceptEntries}
                       ) : (
                         /* ── VIEW MODE ── */
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px'}}>
+                          <div style={{color: 'var(--text-secondary)', fontSize: '18px', lineHeight: 1, flexShrink: 0, cursor: 'grab', marginTop: '2px', userSelect: 'none'}} title="Drag to reorder">⠿</div>
                           <div style={{flex: 1, minWidth: 0}}>
                             <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '6px'}}>
                               <span style={{fontWeight: '800', fontSize: '16px', color: 'var(--text-primary)'}}>{entry.sourceTerm}</span>
