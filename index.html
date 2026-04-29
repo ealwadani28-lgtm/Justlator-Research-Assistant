@@ -540,6 +540,9 @@
           const words = generatedPaper.trim().split(/\s+/).length;
           setWordCount(words);
           setPageCount(Math.ceil(words / 500));
+        } else {
+          setWordCount(0);
+          setPageCount(0);
         }
       }, [generatedPaper]);
 
@@ -1957,7 +1960,7 @@ ${conceptEntries}
               </div>
             </div>
 
-            {(paperTopic || generatedPaper) && (
+            {(paperTopic || paperNotes || generatedPaper || paperSection !== 'introduction') && (
               <div style={{marginBottom: '16px', padding: '10px 16px', borderRadius: '10px', background: 'rgba(126,161,252,0.08)', border: '1px solid var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
                 <span style={{fontSize: '13px', color: 'var(--accent-primary)'}}>📄</span>
                 <span style={{fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)'}}>
