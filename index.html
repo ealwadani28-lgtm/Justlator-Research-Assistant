@@ -765,7 +765,7 @@
             const orderData = await window.storage.get('settings:glossary-order');
             if (orderData && orderData.value) {
               const order = JSON.parse(orderData.value);
-              if (Array.isArray(order)) {
+              if (Array.isArray(order) && order.length > 0) {
                 setGlossaryCustomOrder(order);
                 setGlossarySort('custom');
               }
