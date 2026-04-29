@@ -405,7 +405,9 @@
       const [copiedCitation, setCopiedCitation] = useState(null);
 
       // Bibliography state
-      const [bibFormat, setBibFormat] = useState('APA');
+      const [bibFormat, setBibFormat] = useState(() => {
+        try { return localStorage.getItem('justlator-bib-format') || 'APA'; } catch(e) { return 'APA'; }
+      });
       const [bibliographyList, setBibliographyList] = useState([]);
       const [bibCopied, setBibCopied] = useState(false);
       const [writerBibCopied, setWriterBibCopied] = useState(false);
@@ -429,6 +431,10 @@
       useEffect(() => {
         try { localStorage.setItem('justlator-text-dir', textDir); } catch(e) {}
       }, [textDir]);
+
+      useEffect(() => {
+        try { localStorage.setItem('justlator-bib-format', bibFormat); } catch(e) {}
+      }, [bibFormat]);
 
       // Auto-refresh bibliography when sources change (only if already generated)
       useEffect(() => {
