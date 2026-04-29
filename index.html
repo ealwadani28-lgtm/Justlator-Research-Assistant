@@ -344,7 +344,6 @@
       const [knowledgeBase, setKnowledgeBase] = useState([]);
       const [loading, setLoading] = useState(false);
       const [serverHasKey, setServerHasKey] = useState(false);
-      const [serverAppToken, setServerAppToken] = useState('');
       const [claudeApiKey, setClaudeApiKey] = useState(() => {
         try { return sessionStorage.getItem('justlator-claude-key') || ''; } catch(e) { return ''; }
       });
@@ -546,10 +545,9 @@
         setBibAppended(false);
       };
 
-      // Check server-side API key config on mount; store app token for auth
+      // Check server-side API key config on mount
       useEffect(() => {
-        fetch('/api/config').then(r => r.json()).then(d => {
-          if (d.appToken) setServerAppToken(d.appToken);
+        fetch('/api/config', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
           if (d.hasServerKey) {
             setServerHasKey(true);
             setClaudeApiKey('__server__');
@@ -583,8 +581,9 @@
         try {
           const res = await fetch('/api/humanize', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: aiText, apiKey: serverHasKey ? '' : claudeApiKey, appToken: serverAppToken })
+            body: JSON.stringify({ text: aiText, apiKey: serverHasKey ? '' : claudeApiKey })
           });
           const data = await res.json();
           if (!res.ok) { setClaudeApiError(data.error || 'Something went wrong'); return; }
@@ -609,6 +608,7 @@
           }));
           const res = await fetch('/api/write', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               topic: paperTopic,
@@ -616,8 +616,7 @@
               notes: paperNotes,
               sources: sourcesData,
               existing: generatedPaper,
-              apiKey: serverHasKey ? '' : claudeApiKey,
-              appToken: serverAppToken
+              apiKey: serverHasKey ? '' : claudeApiKey
             })
           });
           const data = await res.json();
@@ -646,8 +645,9 @@
         try {
           const res = await fetch('/api/similarity', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text1, text2, apiKey: serverHasKey ? '' : claudeApiKey, appToken: serverAppToken })
+            body: JSON.stringify({ text1, text2, apiKey: serverHasKey ? '' : claudeApiKey })
           });
           const data = await res.json();
           if (!res.ok) { setClaudeApiError(data.error || 'Something went wrong'); return; }

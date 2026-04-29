@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, session
 from flask_cors import CORS
 import anthropic
 import os
@@ -12,24 +12,22 @@ from collections import defaultdict
 app = Flask(__name__, static_folder=None)
 app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # reject bodies > 1 MB
 
+# ── Session secret ────────────────────────────────────────────────────────────
+# If FLASK_SECRET_KEY is set in the environment, use it (survives restarts).
+# Otherwise generate a fresh random key — sessions issued before a restart
+# will be invalid, which is acceptable for this app's usage pattern.
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or secrets.token_hex(32)
+
 # ── CORS ─────────────────────────────────────────────────────────────────────
 # Restrict to the Replit preview domain and localhost only.
 _dev_domain = os.environ.get('REPLIT_DEV_DOMAIN', '')
 _allowed_origins = ['http://localhost:5000', 'http://127.0.0.1:5000']
 if _dev_domain:
     _allowed_origins.append(f'https://{_dev_domain}')
-CORS(app, origins=_allowed_origins)
-
-# ── App token (server-side session credential) ───────────────────────────────
-# Generated fresh on each server start. The frontend must request it from
-# /api/config and include it with every server-billed AI request.  Without a
-# valid token the server-side ANTHROPIC_API_KEY is never used, so anonymous
-# callers (curl, bots) cannot spend server credits even if they know the URLs.
-_APP_TOKEN: str = secrets.token_hex(32)
+CORS(app, origins=_allowed_origins, supports_credentials=True)
 
 # ── Simple in-memory rate limiter ─────────────────────────────────────────────
-# Applied only when a server-side key is in use; user-supplied keys are the
-# user's own quota so rate-limiting them server-side is less critical.
+# Applied only on the server-billed path.
 _rate_store: dict = defaultdict(list)
 _RATE_WINDOW = 60   # seconds
 _RATE_MAX    = 20   # requests per window per IP
@@ -55,32 +53,43 @@ def no_cache(response):
 
 @app.route('/')
 def index():
+    """Serve the app and establish a signed server-side session on first load.
+
+    The session acts as the credential that proves a request came from a real
+    browser that loaded the UI.  Without a valid session the server-side
+    ANTHROPIC_API_KEY is never used, so anonymous HTTP clients (curl/bots)
+    cannot spend server credits even when they know the endpoint URLs.
+    """
+    if 'sid' not in session:
+        session['sid'] = secrets.token_hex(16)
+        session.permanent = False  # expires when the browser tab is closed
     return send_file('index.html')
+
+
+def _has_valid_session() -> bool:
+    """Return True only when the request carries a valid signed session cookie."""
+    return bool(session.get('sid'))
 
 
 @app.route('/api/config', methods=['GET'])
 def config():
-    """Tell the frontend whether a server-side API key is configured.
-    Also returns the app token that the frontend must present with every
-    server-billed request so anonymous callers cannot spend server credits."""
+    """Tell the frontend whether a server-side API key is configured."""
     has_server_key = bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())
-    return jsonify({'hasServerKey': has_server_key, 'appToken': _APP_TOKEN})
+    return jsonify({'hasServerKey': has_server_key})
 
 
 def _get_api_key(data):
     """
-    Return the API key to use.
-    Priority: server-side env var > user-provided key in request body.
+    Return (api_key, is_server_key).
 
-    When a server-side key exists the caller MUST supply a valid appToken.
-    Without it we fall back to the user-supplied key (or fail with 401).
+    Server-side ANTHROPIC_API_KEY is used only when the caller has a valid
+    signed session (i.e. loaded the page through the Flask app).  Without a
+    session the server key is never used; the call either uses the user's own
+    API key or fails with 'no key configured'.
     """
     server_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
-    if server_key:
-        caller_token = (data.get('appToken') or '').strip()
-        if secrets.compare_digest(caller_token, _APP_TOKEN):
-            return server_key, True   # (key, is_server_key)
-        # Token missing or wrong — do not expose server key; fall through
+    if server_key and _has_valid_session():
+        return server_key, True
     user_key = (data.get('apiKey') or '').strip()
     return user_key, False
 
