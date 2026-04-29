@@ -70,8 +70,8 @@ def humanize():
         return jsonify({'error': 'Invalid API key. Please check your key at console.anthropic.com'}), 401
     except anthropic.RateLimitError:
         return jsonify({'error': 'Rate limit reached. Please wait a moment and try again'}), 429
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return jsonify({'error': 'An unexpected error occurred. Please try again.'}), 500
 
 
 @app.route('/api/write', methods=['POST'])
@@ -145,8 +145,8 @@ def write():
         return jsonify({'error': 'Invalid API key. Please check your key at console.anthropic.com'}), 401
     except anthropic.RateLimitError:
         return jsonify({'error': 'Rate limit reached. Please wait a moment and try again'}), 429
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return jsonify({'error': 'An unexpected error occurred. Please try again.'}), 500
 
 
 @app.route('/api/similarity', methods=['POST'])
@@ -188,8 +188,8 @@ def similarity():
         return jsonify({'error': 'Invalid API key. Please check your key at console.anthropic.com'}), 401
     except anthropic.RateLimitError:
         return jsonify({'error': 'Rate limit reached. Please wait a moment and try again'}), 429
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        return jsonify({'error': 'An unexpected error occurred. Please try again.'}), 500
 
 
 if __name__ == '__main__':
