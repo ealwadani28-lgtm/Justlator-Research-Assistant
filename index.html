@@ -1956,6 +1956,21 @@ ${conceptEntries}
                 </button>
               </div>
             </div>
+
+            {(paperTopic || generatedPaper) && (
+              <div style={{marginBottom: '16px', padding: '10px 16px', borderRadius: '10px', background: 'rgba(126,161,252,0.08)', border: '1px solid var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
+                <span style={{fontSize: '13px', color: 'var(--accent-primary)'}}>📄</span>
+                <span style={{fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)'}}>
+                  {paperTopic ? `Draft: ${paperTopic}` : 'Draft in progress'}
+                </span>
+                {wordCount > 0 && (
+                  <span style={{fontSize: '13px', color: 'var(--text-secondary)'}}>
+                    — {wordCount.toLocaleString()} words
+                  </span>
+                )}
+              </div>
+            )}
+
             <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
               <div className="mb-4 p-4 rounded" style={{background: 'rgba(126, 161, 252, 0.1)', border: '2px solid var(--accent-primary)', borderRadius: '10px'}}>
                 <strong>📄 Unlimited Page Generation!</strong>
