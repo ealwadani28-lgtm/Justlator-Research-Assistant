@@ -874,6 +874,7 @@
       };
 
       const glossaryImportRef = React.useRef(null);
+      const glossaryTBXImportRef = React.useRef(null);
 
       const exportGlossaryCSV = () => {
         if (glossary.length === 0) {
@@ -1053,6 +1054,100 @@ ${conceptEntries}
             }
           }
           alert(`Successfully imported ${newEntries.length} new ${newEntries.length === 1 ? 'entry' : 'entries'}.`);
+        } catch (err) {
+          alert('Error saving imported entries: ' + err.message);
+        }
+      };
+
+      const importGlossaryTBX = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        e.target.value = '';
+        let text;
+        try {
+          text = await file.text();
+        } catch (err) {
+          alert('Could not read the file: ' + err.message);
+          return;
+        }
+        let doc;
+        try {
+          const parser = new DOMParser();
+          doc = parser.parseFromString(text, 'application/xml');
+          const parseError = doc.getElementsByTagNameNS('*', 'parsererror')[0]
+            || doc.querySelector('parsererror');
+          if (parseError) throw new Error(parseError.textContent);
+        } catch (err) {
+          alert('Invalid TBX file: ' + err.message);
+          return;
+        }
+        const byLocalName = (parent, localName) =>
+          Array.from(parent.getElementsByTagNameNS('*', localName));
+        const getXmlLang = (el) =>
+          (el.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'lang')
+            || el.getAttribute('xml:lang')
+            || el.getAttribute('lang')
+            || '').trim();
+        const getTermText = (langSec) => {
+          const termEl = byLocalName(langSec, 'term')[0];
+          return termEl ? (termEl.textContent || '').trim() : '';
+        };
+        const getDomain = (concept) => {
+          const descrips = byLocalName(concept, 'descrip');
+          const el = descrips.find(d => (d.getAttribute('type') || '') === 'subjectField');
+          return el ? (el.textContent || '').trim() || 'General' : 'General';
+        };
+        const getNotes = (concept) => {
+          const noteEl = byLocalName(concept, 'note')[0];
+          return noteEl ? (noteEl.textContent || '').trim() : '';
+        };
+        const conceptEntries = byLocalName(doc, 'conceptEntry');
+        if (conceptEntries.length === 0) {
+          alert('No concept entries found in the TBX file. Make sure the file is a valid TBX/TBX-Basic document.');
+          return;
+        }
+        const existingKeys = new Set(glossary.map(e => `${e.sourceTerm.trim().toLowerCase()}||${e.targetTerm.trim().toLowerCase()}`));
+        const newEntries = [];
+        let entryCounter = 0;
+        conceptEntries.forEach((concept) => {
+          const domain = getDomain(concept);
+          const notes = getNotes(concept);
+          const langSecs = byLocalName(concept, 'langSec');
+          if (langSecs.length < 2) return;
+          const sourceLang = getXmlLang(langSecs[0]);
+          const sourceTerm = getTermText(langSecs[0]);
+          if (!sourceTerm) return;
+          for (let i = 1; i < langSecs.length; i++) {
+            const targetLang = getXmlLang(langSecs[i]);
+            const targetTerm = getTermText(langSecs[i]);
+            if (!targetTerm) continue;
+            const key = `${sourceTerm.toLowerCase()}||${targetTerm.toLowerCase()}`;
+            if (existingKeys.has(key)) continue;
+            existingKeys.add(key);
+            newEntries.push({
+              id: `${Date.now()}_tbx_${entryCounter++}`,
+              sourceTerm,
+              targetTerm,
+              sourceLang,
+              targetLang,
+              domain,
+              notes,
+              dateAdded: new Date().toISOString()
+            });
+          }
+        });
+        if (newEntries.length === 0) {
+          alert('No new entries found. All entries already exist in your glossary (matched by source + target term).');
+          return;
+        }
+        try {
+          if (typeof window.storage !== 'undefined') {
+            await Promise.all(newEntries.map(entry =>
+              window.storage.set(`glossary:${entry.id}`, JSON.stringify(entry))
+            ));
+          }
+          setGlossary(prev => [...prev, ...newEntries]);
+          alert(`Successfully imported ${newEntries.length} new ${newEntries.length === 1 ? 'entry' : 'entries'} from TBX.`);
         } catch (err) {
           alert('Error saving imported entries: ' + err.message);
         }
@@ -1996,6 +2091,20 @@ ${conceptEntries}
                   accept=".csv,text/csv"
                   style={{display: 'none'}}
                   onChange={importGlossaryCSV}
+                />
+                <button
+                  onClick={() => glossaryTBXImportRef.current && glossaryTBXImportRef.current.click()}
+                  title="Import entries from a TBX file (compatible with CAT tools)"
+                  style={{padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', border: '2px solid var(--accent-primary)', background: 'rgba(126,161,252,0.1)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px'}}
+                >
+                  ⬆️ Import TBX
+                </button>
+                <input
+                  ref={glossaryTBXImportRef}
+                  type="file"
+                  accept=".tbx,application/xml,text/xml"
+                  style={{display: 'none'}}
+                  onChange={importGlossaryTBX}
                 />
               </div>
             </div>
