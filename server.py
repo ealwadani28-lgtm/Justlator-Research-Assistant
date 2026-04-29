@@ -1,10 +1,41 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import anthropic
 import os
+import time
+from collections import defaultdict
 
-app = Flask(__name__, static_folder='.', static_url_path='')
-CORS(app)
+# ── Static file protection ──────────────────────────────────────────────────
+# Do NOT set static_folder to '.' (repo root) — that would expose server.py,
+# .replit, replit.md and every other project file as public downloads.
+app = Flask(__name__, static_folder=None)
+app.config['MAX_CONTENT_LENGTH'] = 1 * 1024 * 1024  # reject bodies > 1 MB
+
+# ── CORS ─────────────────────────────────────────────────────────────────────
+# Restrict to the Replit preview domain and localhost only.
+_dev_domain = os.environ.get('REPLIT_DEV_DOMAIN', '')
+_allowed_origins = ['http://localhost:5000', 'http://127.0.0.1:5000']
+if _dev_domain:
+    _allowed_origins.append(f'https://{_dev_domain}')
+CORS(app, origins=_allowed_origins)
+
+# ── Simple in-memory rate limiter ─────────────────────────────────────────────
+# Applied only when a server-side key is in use; user-supplied keys are the
+# user's own quota so rate-limiting them server-side is less critical.
+_rate_store: dict = defaultdict(list)
+_RATE_WINDOW = 60   # seconds
+_RATE_MAX    = 20   # requests per window per IP
+
+def _rate_limit_ok(ip: str) -> bool:
+    now = time.time()
+    cutoff = now - _RATE_WINDOW
+    hits = [t for t in _rate_store[ip] if t > cutoff]
+    _rate_store[ip] = hits
+    if len(hits) >= _RATE_MAX:
+        return False
+    _rate_store[ip].append(now)
+    return True
+
 
 @app.after_request
 def no_cache(response):
@@ -13,15 +44,18 @@ def no_cache(response):
     response.headers['Expires'] = '0'
     return response
 
+
 @app.route('/')
 def index():
-    return send_from_directory('.', 'index.html')
+    return send_file('index.html')
+
 
 @app.route('/api/config', methods=['GET'])
 def config():
     """Tell the frontend whether a server-side API key is configured."""
     has_server_key = bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())
     return jsonify({'hasServerKey': has_server_key})
+
 
 def _get_api_key(data):
     """
@@ -30,19 +64,31 @@ def _get_api_key(data):
     """
     server_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
     if server_key:
-        return server_key
-    return (data.get('apiKey') or '').strip()
+        return server_key, True   # (key, is_server_key)
+    return (data.get('apiKey') or '').strip(), False
+
+
+# ── Input length caps ─────────────────────────────────────────────────────────
+_MAX_TEXT   = 50_000   # humanize / similarity text fields
+_MAX_TOPIC  =  2_000
+_MAX_NOTES  =  5_000
+_MAX_EXIST  = 50_000   # existing paper content
+
 
 @app.route('/api/humanize', methods=['POST'])
 def humanize():
     data = request.get_json() or {}
-    api_key = _get_api_key(data)
+    api_key, is_server_key = _get_api_key(data)
     text = (data.get('text') or '').strip()
 
     if not api_key:
         return jsonify({'error': 'No API key configured. Please enter your Claude API key.'}), 400
     if not text:
         return jsonify({'error': 'Please paste some text to humanize'}), 400
+    if len(text) > _MAX_TEXT:
+        return jsonify({'error': f'Text is too long (max {_MAX_TEXT:,} characters).'}), 400
+    if is_server_key and not _rate_limit_ok(request.remote_addr):
+        return jsonify({'error': 'Too many requests. Please wait a moment and try again.'}), 429
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -77,26 +123,34 @@ def humanize():
 @app.route('/api/write', methods=['POST'])
 def write():
     data = request.get_json() or {}
-    api_key = _get_api_key(data)
-    topic = (data.get('topic') or '').strip()
-    section = (data.get('section') or 'introduction')
-    notes = (data.get('notes') or '').strip()
-    sources = data.get('sources') or []
+    api_key, is_server_key = _get_api_key(data)
+    topic    = (data.get('topic')    or '').strip()
+    section  = (data.get('section')  or 'introduction')
+    notes    = (data.get('notes')    or '').strip()
+    sources  = data.get('sources') or []
     existing = (data.get('existing') or '').strip()
 
     if not api_key:
         return jsonify({'error': 'No API key configured. Please enter your Claude API key.'}), 400
     if not topic:
         return jsonify({'error': 'Please enter a research topic'}), 400
+    if len(topic) > _MAX_TOPIC:
+        return jsonify({'error': f'Topic is too long (max {_MAX_TOPIC:,} characters).'}), 400
+    if len(notes) > _MAX_NOTES:
+        return jsonify({'error': f'Notes are too long (max {_MAX_NOTES:,} characters).'}), 400
+    if len(existing) > _MAX_EXIST:
+        return jsonify({'error': f'Existing content is too long (max {_MAX_EXIST:,} characters).'}), 400
+    if is_server_key and not _rate_limit_ok(request.remote_addr):
+        return jsonify({'error': 'Too many requests. Please wait a moment and try again.'}), 429
 
     section_labels = {
-        'fullpaper': 'Full Academic Paper (Introduction, Literature Review, Methodology, Analysis, and Conclusion)',
-        'abstract': 'Abstract',
-        'introduction': 'Introduction',
-        'literature': 'Literature Review',
+        'fullpaper':   'Full Academic Paper (Introduction, Literature Review, Methodology, Analysis, and Conclusion)',
+        'abstract':    'Abstract',
+        'introduction':'Introduction',
+        'literature':  'Literature Review',
         'methodology': 'Methodology',
-        'analysis': 'Analysis and Findings',
-        'conclusion': 'Conclusion'
+        'analysis':    'Analysis and Findings',
+        'conclusion':  'Conclusion'
     }
     section_label = section_labels.get(section, section.title())
 
@@ -152,7 +206,7 @@ def write():
 @app.route('/api/similarity', methods=['POST'])
 def similarity():
     data = request.get_json() or {}
-    api_key = _get_api_key(data)
+    api_key, is_server_key = _get_api_key(data)
     text1 = (data.get('text1') or '').strip()
     text2 = (data.get('text2') or '').strip()
 
@@ -160,6 +214,10 @@ def similarity():
         return jsonify({'error': 'No API key configured. Please enter your Claude API key.'}), 400
     if not text1 or not text2:
         return jsonify({'error': 'Please provide both texts to compare'}), 400
+    if len(text1) > _MAX_TEXT or len(text2) > _MAX_TEXT:
+        return jsonify({'error': f'Each text must be under {_MAX_TEXT:,} characters.'}), 400
+    if is_server_key and not _rate_limit_ok(request.remote_addr):
+        return jsonify({'error': 'Too many requests. Please wait a moment and try again.'}), 429
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
