@@ -411,7 +411,13 @@
       const [writerBibCopied, setWriterBibCopied] = useState(false);
 
       // Paper Writer citation style (for inline bibliography)
-      const [writerCitationStyle, setWriterCitationStyle] = useState('APA');
+      // Track whether a stored preference existed before this session started
+      const hadStoredExportStyle = useRef(
+        (() => { try { return !!localStorage.getItem('justlator-export-citation-style'); } catch(e) { return false; } })()
+      );
+      const [writerCitationStyle, setWriterCitationStyle] = useState(() => {
+        try { return localStorage.getItem('justlator-export-citation-style') || bibFormat; } catch(e) { return bibFormat; }
+      });
       const [bibAppended, setBibAppended] = useState(false);
       const skipBibResetRef = useRef(false);
 
@@ -510,9 +516,16 @@
         }
       });
 
-      // Keep export citation style in sync with the Bibliography tab selection
+      // Persist export citation style to localStorage so it survives page reloads
       useEffect(() => {
-        setWriterCitationStyle(bibFormat);
+        try { localStorage.setItem('justlator-export-citation-style', writerCitationStyle); } catch(e) {}
+      }, [writerCitationStyle]);
+
+      // On first use (no stored preference yet), keep export style in sync with bibFormat
+      useEffect(() => {
+        if (!hadStoredExportStyle.current) {
+          setWriterCitationStyle(bibFormat);
+        }
       }, [bibFormat]);
 
       const clearDraft = () => {
@@ -2395,7 +2408,7 @@ ${conceptEntries}
                     <button
                       key={style}
                       type="button"
-                      onClick={() => { setWriterCitationStyle(style); setBibAppended(false); }}
+                      onClick={() => { hadStoredExportStyle.current = true; setWriterCitationStyle(style); setBibAppended(false); }}
                       style={{
                         padding: '8px 22px',
                         borderRadius: '8px',
@@ -2465,7 +2478,7 @@ ${conceptEntries}
                           <button
                             key={style}
                             type="button"
-                            onClick={() => setWriterCitationStyle(style)}
+                            onClick={() => { hadStoredExportStyle.current = true; setWriterCitationStyle(style); }}
                             style={{
                               padding: '3px 8px',
                               borderRadius: '6px',
