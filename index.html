@@ -2401,35 +2401,6 @@ ${conceptEntries}
                 />
               </div>
 
-              <div className="mb-4">
-                <label className="block font-medium mb-2">Bibliography Citation Style</label>
-                <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
-                  {['APA', 'MLA', 'Chicago'].map(style => (
-                    <button
-                      key={style}
-                      type="button"
-                      onClick={() => { hadStoredExportStyle.current = true; setWriterCitationStyle(style); setBibAppended(false); }}
-                      style={{
-                        padding: '8px 22px',
-                        borderRadius: '8px',
-                        fontWeight: '700',
-                        fontSize: '14px',
-                        cursor: 'pointer',
-                        border: '2px solid var(--border-color)',
-                        background: writerCitationStyle === style ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' : 'var(--bg-secondary)',
-                        color: writerCitationStyle === style ? 'white' : 'var(--text-primary)',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      {style}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-sm mt-1" style={{color: 'var(--text-secondary)'}}>
-                  The bibliography appended to your paper will use this format.
-                </p>
-              </div>
-
               <button
                 onClick={handleWrite}
                 disabled={loading}
