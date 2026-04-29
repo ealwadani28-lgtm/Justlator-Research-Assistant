@@ -17,14 +17,30 @@ def no_cache(response):
 def index():
     return send_from_directory('.', 'index.html')
 
+@app.route('/api/config', methods=['GET'])
+def config():
+    """Tell the frontend whether a server-side API key is configured."""
+    has_server_key = bool(os.environ.get('ANTHROPIC_API_KEY', '').strip())
+    return jsonify({'hasServerKey': has_server_key})
+
+def _get_api_key(data):
+    """
+    Return the API key to use.
+    Priority: server-side env var > user-provided key in request body.
+    """
+    server_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    if server_key:
+        return server_key
+    return (data.get('apiKey') or '').strip()
+
 @app.route('/api/humanize', methods=['POST'])
 def humanize():
-    data = request.get_json()
-    api_key = (data.get('apiKey') or '').strip()
+    data = request.get_json() or {}
+    api_key = _get_api_key(data)
     text = (data.get('text') or '').strip()
 
     if not api_key:
-        return jsonify({'error': 'API key required'}), 400
+        return jsonify({'error': 'No API key configured. Please enter your Claude API key.'}), 400
     if not text:
         return jsonify({'error': 'Please paste some text to humanize'}), 400
 
@@ -60,8 +76,8 @@ def humanize():
 
 @app.route('/api/write', methods=['POST'])
 def write():
-    data = request.get_json()
-    api_key = (data.get('apiKey') or '').strip()
+    data = request.get_json() or {}
+    api_key = _get_api_key(data)
     topic = (data.get('topic') or '').strip()
     section = (data.get('section') or 'introduction')
     notes = (data.get('notes') or '').strip()
@@ -69,7 +85,7 @@ def write():
     existing = (data.get('existing') or '').strip()
 
     if not api_key:
-        return jsonify({'error': 'API key required'}), 400
+        return jsonify({'error': 'No API key configured. Please enter your Claude API key.'}), 400
     if not topic:
         return jsonify({'error': 'Please enter a research topic'}), 400
 
@@ -88,12 +104,11 @@ def write():
     if sources:
         lines = []
         for s in sources[:15]:
-            author = s.get('author', '')
-            year = s.get('year', '')
-            title = s.get('title', '')
-            src_type = s.get('type', '')
-            lines.append(f'- {author} ({year}). "{title}" [{src_type}]')
-        sources_block = '\n\nKnowledge Base Sources — incorporate relevant citations from these:\n' + '\n'.join(lines)
+            lines.append(
+                f'- {s.get("author", "")} ({s.get("year", "")}). '
+                f'"{s.get("title", "")}" [{s.get("type", "")}]'
+            )
+        sources_block = '\n\nKnowledge Base Sources — incorporate relevant citations:\n' + '\n'.join(lines)
 
     existing_block = ''
     if existing:
@@ -102,7 +117,8 @@ def write():
     notes_block = f'\nAdditional notes: {notes}' if notes else ''
 
     prompt = (
-        f'Write a scholarly, well-structured {section_label} for a research paper in Translation Studies on this topic:\n\n'
+        f'Write a scholarly, well-structured {section_label} for a research paper '
+        f'in Translation Studies on this topic:\n\n'
         f'Topic: {topic}{notes_block}{sources_block}{existing_block}\n\n'
         'Requirements:\n'
         '- Use formal academic language appropriate for Translation Studies scholarship\n'
@@ -135,13 +151,13 @@ def write():
 
 @app.route('/api/similarity', methods=['POST'])
 def similarity():
-    data = request.get_json()
-    api_key = (data.get('apiKey') or '').strip()
+    data = request.get_json() or {}
+    api_key = _get_api_key(data)
     text1 = (data.get('text1') or '').strip()
     text2 = (data.get('text2') or '').strip()
 
     if not api_key:
-        return jsonify({'error': 'API key required'}), 400
+        return jsonify({'error': 'No API key configured. Please enter your Claude API key.'}), 400
     if not text1 or not text2:
         return jsonify({'error': 'Please provide both texts to compare'}), 400
 
@@ -156,7 +172,8 @@ def similarity():
                     'Analyze the similarity between these two texts.\n\n'
                     'Respond in exactly this format:\n'
                     'Similarity: [X]%\n'
-                    'Analysis: [2-3 sentences explaining what overlaps, what differs, and the nature of the similarity]\n\n'
+                    'Analysis: [2-3 sentences explaining what overlaps, what differs, '
+                    'and the nature of the similarity]\n\n'
                     f'Text 1:\n{text1[:3000]}\n\n'
                     f'Text 2:\n{text2[:3000]}'
                 )

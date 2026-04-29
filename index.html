@@ -343,8 +343,9 @@
       const [activeTab, setActiveTab] = useState('guide');
       const [knowledgeBase, setKnowledgeBase] = useState([]);
       const [loading, setLoading] = useState(false);
+      const [serverHasKey, setServerHasKey] = useState(false);
       const [claudeApiKey, setClaudeApiKey] = useState(() => {
-        try { return localStorage.getItem('justlator-claude-key') || ''; } catch(e) { return ''; }
+        try { return sessionStorage.getItem('justlator-claude-key') || ''; } catch(e) { return ''; }
       });
       const [claudeKeyInput, setClaudeKeyInput] = useState('');
       const [claudeApiError, setClaudeApiError] = useState('');
@@ -495,13 +496,23 @@
         setBibAppended(false);
       };
 
-      // Save Claude API key to localStorage
+      // Check server-side API key config on mount
+      useEffect(() => {
+        fetch('/api/config').then(r => r.json()).then(d => {
+          if (d.hasServerKey) {
+            setServerHasKey(true);
+            setClaudeApiKey('__server__');
+          }
+        }).catch(() => {});
+      }, []);
+
+      // Save Claude API key to sessionStorage (tab-session only, not persisted to disk)
       const saveClaudeKey = (key) => {
         const trimmed = key.trim();
         setClaudeApiKey(trimmed);
         setClaudeKeyInput('');
         setClaudeApiError('');
-        try { localStorage.setItem('justlator-claude-key', trimmed); } catch(e) {}
+        try { sessionStorage.setItem('justlator-claude-key', trimmed); } catch(e) {}
       };
 
       // Update usage meter after an AI call
@@ -513,7 +524,7 @@
 
       // AI: Humanize text
       const handleHumanize = async () => {
-        if (!claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
+        if (!serverHasKey && !claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
         if (!aiText.trim()) { setClaudeApiError('Please paste some text to humanize'); return; }
         setLoading(true);
         setClaudeApiError('');
@@ -522,7 +533,7 @@
           const res = await fetch('/api/humanize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: aiText, apiKey: claudeApiKey })
+            body: JSON.stringify({ text: aiText, apiKey: serverHasKey ? '' : claudeApiKey })
           });
           const data = await res.json();
           if (!res.ok) { setClaudeApiError(data.error || 'Something went wrong'); return; }
@@ -537,7 +548,7 @@
 
       // AI: Generate paper section
       const handleWrite = async () => {
-        if (!claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
+        if (!serverHasKey && !claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
         if (!paperTopic.trim()) { setClaudeApiError('Please enter a research topic'); return; }
         setLoading(true);
         setClaudeApiError('');
@@ -554,7 +565,7 @@
               notes: paperNotes,
               sources: sourcesData,
               existing: generatedPaper,
-              apiKey: claudeApiKey
+              apiKey: serverHasKey ? '' : claudeApiKey
             })
           });
           const data = await res.json();
@@ -575,7 +586,7 @@
 
       // AI: Check similarity
       const handleSimilarity = async () => {
-        if (!claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
+        if (!serverHasKey && !claudeApiKey) { setClaudeApiError('Please enter your Claude API key above'); return; }
         if (!text1.trim() || !text2.trim()) { setClaudeApiError('Please provide both texts to compare'); return; }
         setLoading(true);
         setClaudeApiError('');
@@ -584,7 +595,7 @@
           const res = await fetch('/api/similarity', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text1, text2, apiKey: claudeApiKey })
+            body: JSON.stringify({ text1, text2, apiKey: serverHasKey ? '' : claudeApiKey })
           });
           const data = await res.json();
           if (!res.ok) { setClaudeApiError(data.error || 'Something went wrong'); return; }
@@ -2067,11 +2078,15 @@ ${conceptEntries}
             <h2 className="text-3xl font-bold mb-6" style={{color: 'var(--accent-primary)'}}>✨ AI Humanizer</h2>
             <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
               {/* API Key setup */}
-              <div className="mb-4 p-3 rounded" style={{background: claudeApiKey ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${claudeApiKey ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
-                {claudeApiKey ? (
+              <div className="mb-4 p-3 rounded" style={{background: (serverHasKey || claudeApiKey) ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${(serverHasKey || claudeApiKey) ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
+                {serverHasKey ? (
+                  <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>✓ AI ready</span>
+                  </div>
+                ) : claudeApiKey ? (
                   <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
-                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved</span>
-                    <button onClick={() => { setClaudeApiKey(''); try { localStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved (session only)</span>
+                    <button onClick={() => { setClaudeApiKey(''); try { sessionStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
                   </div>
                 ) : (
                   <div>
@@ -2173,11 +2188,15 @@ ${conceptEntries}
 
             <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
               {/* API Key setup */}
-              <div className="mb-4 p-3 rounded" style={{background: claudeApiKey ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${claudeApiKey ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
-                {claudeApiKey ? (
+              <div className="mb-4 p-3 rounded" style={{background: (serverHasKey || claudeApiKey) ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${(serverHasKey || claudeApiKey) ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
+                {serverHasKey ? (
+                  <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>✓ AI ready</span>
+                  </div>
+                ) : claudeApiKey ? (
                   <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
-                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved</span>
-                    <button onClick={() => { setClaudeApiKey(''); try { localStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved (session only)</span>
+                    <button onClick={() => { setClaudeApiKey(''); try { sessionStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
                   </div>
                 ) : (
                   <div>
@@ -2535,11 +2554,15 @@ ${conceptEntries}
             <h2 className="text-3xl font-bold mb-6" style={{color: 'var(--accent-primary)'}}>🔍 Similarity Checker</h2>
             <div className="rounded-lg p-6" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
               {/* API Key setup */}
-              <div className="mb-4 p-3 rounded" style={{background: claudeApiKey ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${claudeApiKey ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
-                {claudeApiKey ? (
+              <div className="mb-4 p-3 rounded" style={{background: (serverHasKey || claudeApiKey) ? 'rgba(22,163,74,0.07)' : 'rgba(251,191,36,0.1)', border: `1px solid ${(serverHasKey || claudeApiKey) ? '#16a34a' : '#f59e0b'}`, borderRadius: '10px'}}>
+                {serverHasKey ? (
+                  <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>✓ AI ready</span>
+                  </div>
+                ) : claudeApiKey ? (
                   <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
-                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved</span>
-                    <button onClick={() => { setClaudeApiKey(''); try { localStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
+                    <span style={{fontSize: '13px', fontWeight: '700', color: '#16a34a'}}>🔑 Claude API key saved (session only)</span>
+                    <button onClick={() => { setClaudeApiKey(''); try { sessionStorage.removeItem('justlator-claude-key'); } catch(e) {} }} style={{fontSize: '12px', color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline'}}>Change key</button>
                   </div>
                 ) : (
                   <div>
