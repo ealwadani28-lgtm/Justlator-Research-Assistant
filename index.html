@@ -765,8 +765,10 @@
             const orderData = await window.storage.get('settings:glossary-order');
             if (orderData && orderData.value) {
               const order = JSON.parse(orderData.value);
-              setGlossaryCustomOrder(order);
-              setGlossarySort('custom');
+              if (Array.isArray(order)) {
+                setGlossaryCustomOrder(order);
+                setGlossarySort('custom');
+              }
             }
           } catch (e) {}
         } catch (error) {
@@ -2128,9 +2130,14 @@ ${conceptEntries}
               </div>
             ) : (
               <div>
-                <p style={{fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '12px'}}>
+                <p style={{fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: (glossarySearch || glossaryDomainFilter || glossaryLangFilter) ? '6px' : '12px'}}>
                   {filteredGlossary.length} {filteredGlossary.length === 1 ? 'entry' : 'entries'}{(glossarySearch || glossaryDomainFilter || glossaryLangFilter) ? ' found' : ' total'}
                 </p>
+                {(glossarySearch || glossaryDomainFilter || glossaryLangFilter) && (
+                  <p style={{fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px', fontStyle: 'italic'}}>
+                    Drag reordering is active — only the visible entries will be repositioned.
+                  </p>
+                )}
                 <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
                   {filteredGlossary.map(entry => (
                     <div
