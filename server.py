@@ -66,6 +66,42 @@ _STATS_FILE = 'stats.json'
 _STATS_LOCK = threading.Lock()
 _STATS_DEFAULTS = {'visits': 0, 'papersGenerated': 0, 'wordsProduced': 0, 'sourcesAdded': 0}
 
+# ── Per-user stats (file-based, keyed by Replit user ID) ─────────────────────
+_USER_STATS_FILE = 'user_stats.json'
+_USER_STATS_LOCK = threading.Lock()
+_USER_STATS_DEFAULTS = {'papersGenerated': 0, 'wordsProduced': 0, 'tokensUsed': 0}
+
+
+def _load_user_stats_file() -> dict:
+    try:
+        with open(_USER_STATS_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_user_stats_file(data: dict) -> None:
+    with open(_USER_STATS_FILE, 'w') as f:
+        json.dump(data, f)
+
+
+def _get_user_stats(user_id: str) -> dict:
+    all_stats = _load_user_stats_file()
+    return {**_USER_STATS_DEFAULTS, **all_stats.get(user_id, {})}
+
+
+def _update_user_stats(user_id: str, **increments) -> dict:
+    """Atomically increment per-user counters and return updated stats."""
+    with _USER_STATS_LOCK:
+        all_stats = _load_user_stats_file()
+        user = {**_USER_STATS_DEFAULTS, **all_stats.get(user_id, {})}
+        for key, value in increments.items():
+            if key in _USER_STATS_DEFAULTS:
+                user[key] = user.get(key, 0) + value
+        all_stats[user_id] = user
+        _save_user_stats_file(all_stats)
+        return user
+
 
 def _load_stats() -> dict:
     try:
@@ -108,7 +144,21 @@ def track():
         elif event == 'source':
             stats['sourcesAdded'] += 1
         _save_stats(stats)
-        return jsonify(stats)
+
+    # Also update per-user stats for authenticated users.
+    user_id = _replit_user_id()
+    if user_id and event == 'paper':
+        try:
+            words = max(0, int(data.get('words') or 0))
+        except (ValueError, TypeError):
+            words = 0
+        try:
+            tokens = max(0, int(data.get('tokens') or 0))
+        except (ValueError, TypeError):
+            tokens = 0
+        _update_user_stats(user_id, papersGenerated=1, wordsProduced=words, tokensUsed=tokens)
+
+    return jsonify(stats)
 
 
 @app.route('/')
@@ -129,6 +179,19 @@ def me():
         'id':           request.headers.get('X-Replit-User-Id', '').strip(),
         'profileImage': request.headers.get('X-Replit-User-Profile-Image', '').strip(),
     })
+
+
+@app.route('/api/me/stats', methods=['GET'])
+def me_stats():
+    """Return personal usage stats for the currently authenticated user.
+
+    Returns 404 when called without a valid Replit user session so the
+    frontend can fall back to showing only global stats for anonymous visitors.
+    """
+    user_id = _replit_user_id()
+    if not user_id:
+        return jsonify({'error': 'Not authenticated'}), 404
+    return jsonify(_get_user_stats(user_id))
 
 
 @app.route('/api/config', methods=['GET'])

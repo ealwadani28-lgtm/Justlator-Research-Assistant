@@ -416,6 +416,7 @@
       const [backupImportStatus, setBackupImportStatus] = useState('');
       const backupFileInputRef = useRef(null);
       const [globalStats, setGlobalStats] = useState({ visits: 0, papersGenerated: 0, wordsProduced: 0, sourcesAdded: 0 });
+      const [userStats, setUserStats] = useState(null);
       const paperDraftFirstRender = useRef(true);
       const skipNextDraftSaveRef = useRef(false);
       const paperOutputRef = useRef(null);
@@ -764,15 +765,16 @@
         }
       };
       // ── Impact tracking ────────────────────────────────────────────────────────
-      const trackEvent = (event, words) => {
+      const trackEvent = (event, words, tokens) => {
         try {
           fetch('/api/track', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ event, words: words || 0 }),
+            body: JSON.stringify({ event, words: words || 0, tokens: tokens || 0 }),
           }).then(r => r.ok ? r.json() : null).then(d => {
             if (d && !d.error) setGlobalStats(d);
+            if (event === 'paper') fetchUserStats();
           }).catch(() => {});
         } catch(e) {}
       };
@@ -781,6 +783,13 @@
         fetch('/api/stats', { credentials: 'same-origin' })
           .then(r => r.json())
           .then(d => { if (d && typeof d.visits === 'number') setGlobalStats(d); })
+          .catch(() => {});
+      };
+
+      const fetchUserStats = () => {
+        fetch('/api/me/stats', { credentials: 'same-origin' })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d && typeof d.papersGenerated === 'number') setUserStats(d); })
           .catch(() => {});
       };
       // ────────────────────────────────────────────────────────────────────────
@@ -794,7 +803,10 @@
           }
         }).catch(() => {});
         fetch('/api/me', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
-          if (d && d.name) setReplitUser({ name: d.name, id: d.id || '', profileImage: d.profileImage || '' });
+          if (d && d.name) {
+            setReplitUser({ name: d.name, id: d.id || '', profileImage: d.profileImage || '' });
+            fetchUserStats();
+          }
         }).catch(() => {});
         trackEvent('visit');
         fetchGlobalStats();
@@ -876,7 +888,7 @@
           setBibAppended(false);
           updateUsage(data.inputTokens || 0, data.outputTokens || 0);
           const newWords = (data.result || '').trim().split(/\s+/).filter(Boolean).length;
-          trackEvent('paper', newWords);
+          trackEvent('paper', newWords, (data.inputTokens || 0) + (data.outputTokens || 0));
         } catch(e) {
           setClaudeApiError('Could not reach the server. Please try again.');
         } finally {
@@ -2051,6 +2063,51 @@ ${conceptEntries}
                     ))}
                   </div>
                 </div>
+
+                {/* ── Personal Usage Stats ── */}
+                {replitUser.name ? (
+                  userStats ? (
+                    <div style={{marginBottom: '24px', background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '20px', padding: '24px'}}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px'}}>
+                        {replitUser.profileImage ? (
+                          <img src={replitUser.profileImage} alt={replitUser.name} style={{width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-primary)'}} />
+                        ) : (
+                          <div style={{width: '36px', height: '36px', borderRadius: '50%', background: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '14px', color: 'white', flexShrink: 0}}>
+                            {replitUser.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div>
+                          <div style={{fontWeight: '700', fontSize: '15px', color: 'var(--text-primary)'}}>Your Activity</div>
+                          <div style={{fontSize: '12px', color: 'var(--text-secondary)'}}>{replitUser.name} · personal history</div>
+                        </div>
+                      </div>
+                      <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px'}}>
+                        {[
+                          { icon: '📄', label: 'Papers Generated', value: userStats.papersGenerated },
+                          { icon: '📝', label: 'Words Produced', value: userStats.wordsProduced },
+                          { icon: '⚡', label: 'Tokens Used', value: userStats.tokensUsed },
+                        ].map(item => (
+                          <div key={item.label} style={{background: 'var(--bg-secondary)', borderRadius: '12px', padding: '14px 10px', textAlign: 'center', border: '1px solid var(--border-color)'}}>
+                            <div style={{fontSize: '22px', marginBottom: '4px'}}>{item.icon}</div>
+                            <div style={{fontSize: '22px', fontWeight: '800', color: 'var(--accent-primary)', lineHeight: 1, marginBottom: '4px'}}>
+                              {item.value.toLocaleString()}
+                            </div>
+                            <div style={{fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)'}}>{item.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null
+                ) : (
+                  <div style={{marginBottom: '24px', background: 'var(--bg-card)', border: '2px dashed var(--border-color)', borderRadius: '16px', padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '14px'}}>
+                    <div style={{fontSize: '28px'}}>🔒</div>
+                    <div>
+                      <div style={{fontWeight: '700', fontSize: '14px', color: 'var(--text-primary)', marginBottom: '4px'}}>Track your personal usage</div>
+                      <div style={{fontSize: '13px', color: 'var(--text-secondary)'}}>Sign in to see your own paper count, word output, and token history.</div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-white rounded-lg p-6 mb-4" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
                   <p className="mb-4" style={{color: 'var(--text-secondary)', lineHeight: '1.8'}}>
                     Welcome! This is your complete Translation Studies Research Assistant with ALL features working:
