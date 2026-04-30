@@ -338,6 +338,29 @@
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
+    // ── Animated counter component ────────────────────────────────────────────
+    function CounterUp({ target, duration = 1500 }) {
+      const [display, setDisplay] = useState(0);
+      const startRef = useRef(null);
+      const rafRef = useRef(null);
+      useEffect(() => {
+        if (target === 0) { setDisplay(0); return; }
+        startRef.current = null;
+        const animate = (ts) => {
+          if (!startRef.current) startRef.current = ts;
+          const elapsed = ts - startRef.current;
+          const progress = Math.min(elapsed / duration, 1);
+          // ease-out cubic
+          const eased = 1 - Math.pow(1 - progress, 3);
+          setDisplay(Math.round(eased * target));
+          if (progress < 1) rafRef.current = requestAnimationFrame(animate);
+        };
+        rafRef.current = requestAnimationFrame(animate);
+        return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+      }, [target, duration]);
+      return React.createElement(React.Fragment, null, display.toLocaleString());
+    }
+
     function App() {
       // State management
       const [activeTab, setActiveTab] = useState('guide');
@@ -391,6 +414,7 @@
       const [backupStatus, setBackupStatus] = useState('');
       const [backupImportStatus, setBackupImportStatus] = useState('');
       const backupFileInputRef = useRef(null);
+      const [globalStats, setGlobalStats] = useState({ visits: 0, papersGenerated: 0, wordsProduced: 0, sourcesAdded: 0 });
       const paperDraftFirstRender = useRef(true);
       const skipNextDraftSaveRef = useRef(false);
       const paperOutputRef = useRef(null);
@@ -738,9 +762,29 @@
           setTimeout(() => setBackupImportStatus(''), 4000);
         }
       };
+      // ── Impact tracking ────────────────────────────────────────────────────────
+      const trackEvent = (event, words) => {
+        try {
+          fetch('/api/track', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event, words: words || 0 }),
+          }).then(r => r.ok ? r.json() : null).then(d => {
+            if (d && !d.error) setGlobalStats(d);
+          }).catch(() => {});
+        } catch(e) {}
+      };
+
+      const fetchGlobalStats = () => {
+        fetch('/api/stats', { credentials: 'same-origin' })
+          .then(r => r.json())
+          .then(d => { if (d && typeof d.visits === 'number') setGlobalStats(d); })
+          .catch(() => {});
+      };
       // ────────────────────────────────────────────────────────────────────────
 
-      // Check server-side API key config on mount
+      // Check server-side API key config on mount; track visit; fetch stats
       useEffect(() => {
         fetch('/api/config', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
           if (d.hasServerKey) {
@@ -748,6 +792,10 @@
             setClaudeApiKey('__server__');
           }
         }).catch(() => {});
+        trackEvent('visit');
+        fetchGlobalStats();
+        const statsInterval = setInterval(fetchGlobalStats, 30000);
+        return () => clearInterval(statsInterval);
       }, []);
 
       // Save Claude API key to sessionStorage (tab-session only, not persisted to disk)
@@ -823,6 +871,8 @@
           }
           setBibAppended(false);
           updateUsage(data.inputTokens || 0, data.outputTokens || 0);
+          const newWords = (data.result || '').trim().split(/\s+/).filter(Boolean).length;
+          trackEvent('paper', newWords);
         } catch(e) {
           setClaudeApiError('Could not reach the server. Please try again.');
         } finally {
@@ -1523,6 +1573,7 @@ ${conceptEntries}
           alert(source.hasChunks 
             ? `Source added! Split into ${source.chunkCount} smart chunks 🧠⚡`
             : 'Source added successfully! 🧠');
+          trackEvent('source');
         } catch (error) {
           alert('Error saving source: ' + error.message);
         }
@@ -1946,6 +1997,31 @@ ${conceptEntries}
             {activeTab === 'guide' && (
               <div>
                 <h2 className="text-3xl font-bold mb-6" style={{color: 'var(--accent-primary)'}}>📖 How to Use</h2>
+
+                {/* ✨ Impact Dashboard */}
+                <div style={{marginBottom: '24px', background: 'linear-gradient(135deg, var(--accent-primary)18, var(--accent-secondary)12)', border: '2px solid var(--border-color)', borderRadius: '20px', padding: '28px 24px'}}>
+                  <div style={{textAlign: 'center', marginBottom: '20px'}}>
+                    <h3 style={{fontWeight: '800', fontSize: '20px', color: 'var(--accent-primary)', margin: 0}}>✨ Justlator by the Numbers</h3>
+                    <p style={{fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', marginBottom: 0}}>Live stats · refreshes every 30 seconds</p>
+                  </div>
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px'}}>
+                    {[
+                      { icon: '👁', label: 'Visits', arabic: 'زيارة', key: 'visits' },
+                      { icon: '📄', label: 'Papers Generated', arabic: 'ورقة بحثية', key: 'papersGenerated' },
+                      { icon: '📝', label: 'Words of Knowledge', arabic: 'كلمة معرفية', key: 'wordsProduced' },
+                      { icon: '📚', label: 'Sources Added', arabic: 'مصدر علمي', key: 'sourcesAdded' },
+                    ].map(item => (
+                      <div key={item.key} style={{background: 'var(--bg-card)', borderRadius: '14px', padding: '18px 12px', textAlign: 'center', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'}}>
+                        <div style={{fontSize: '26px', marginBottom: '6px'}}>{item.icon}</div>
+                        <div style={{fontSize: '28px', fontWeight: '800', color: 'var(--accent-primary)', lineHeight: 1, marginBottom: '4px'}}>
+                          <CounterUp target={globalStats[item.key]} />
+                        </div>
+                        <div style={{fontSize: '12px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '2px'}}>{item.label}</div>
+                        <div style={{fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'serif', direction: 'rtl'}}>{item.arabic}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <div className="bg-white rounded-lg p-6 mb-4" style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px'}}>
                   <p className="mb-4" style={{color: 'var(--text-secondary)', lineHeight: '1.8'}}>
                     Welcome! This is your complete Translation Studies Research Assistant with ALL features working:

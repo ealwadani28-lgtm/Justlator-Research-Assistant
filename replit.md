@@ -5,7 +5,8 @@ Justlator — a Translation Studies Research Assistant web app with AI-powered t
 
 ## Project Architecture
 - `index.html`: Main app file (served as root). Contains the full React app, landing page, and all feature tabs.
-- `server.py`: **Flask** server (port 5000). Serves index.html and provides 4 endpoints.
+- `server.py`: **Flask** server (port 5000). Serves index.html and provides 6 endpoints.
+- `stats.json`: File-based global counters (visits, papersGenerated, wordsProduced, sourcesAdded). Created automatically on first use.
 - `requirements.txt`: Python dependencies — flask, anthropic, flask-cors.
 
 ## AI Integration

@@ -3,6 +3,8 @@ from flask_cors import CORS
 import anthropic
 import os
 import time
+import json
+import threading
 from collections import defaultdict
 
 # ── Static file protection ──────────────────────────────────────────────────
@@ -57,6 +59,53 @@ def no_cache(response):
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     return response
+
+
+# ── Global impact stats (file-based, persists across restarts) ───────────────
+_STATS_FILE = 'stats.json'
+_STATS_LOCK = threading.Lock()
+_STATS_DEFAULTS = {'visits': 0, 'papersGenerated': 0, 'wordsProduced': 0, 'sourcesAdded': 0}
+
+
+def _load_stats() -> dict:
+    try:
+        with open(_STATS_FILE, 'r') as f:
+            data = json.load(f)
+        return {**_STATS_DEFAULTS, **{k: v for k, v in data.items() if k in _STATS_DEFAULTS}}
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return dict(_STATS_DEFAULTS)
+
+
+def _save_stats(stats: dict) -> None:
+    with open(_STATS_FILE, 'w') as f:
+        json.dump(stats, f)
+
+
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    with _STATS_LOCK:
+        return jsonify(_load_stats())
+
+
+@app.route('/api/track', methods=['POST'])
+def track():
+    data = request.get_json(silent=True) or {}
+    event = (data.get('event') or '').strip()
+    if event not in ('visit', 'paper', 'source'):
+        return jsonify({'error': 'Unknown event'}), 400
+    with _STATS_LOCK:
+        stats = _load_stats()
+        if event == 'visit':
+            stats['visits'] += 1
+        elif event == 'paper':
+            stats['papersGenerated'] += 1
+            words = int(data.get('words') or 0)
+            if words > 0:
+                stats['wordsProduced'] += words
+        elif event == 'source':
+            stats['sourcesAdded'] += 1
+        _save_stats(stats)
+        return jsonify(stats)
 
 
 @app.route('/')
