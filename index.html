@@ -635,36 +635,28 @@
         } catch(e) {}
       };
       // ── Data Backup ──────────────────────────────────────────────────────────
+      const LS_BACKUP_KEYS = [
+        'justlator-paper-draft',
+        'justlator-bib-format',
+        'justlator-export-citation-style',
+        'justlator-text-dir',
+      ];
+
       const exportBackup = async () => {
         if (!window.storage) return;
         setBackupStatus('exporting');
         try {
-          const prefixes = ['source:', 'chunks:', 'glossary:', 'settings:', 'paper:'];
-          const exactKeys = ['paper-index', 'usage-stats'];
           const storageEntries = {};
-
-          for (const prefix of prefixes) {
-            const result = await window.storage.list(prefix);
-            if (result && result.keys) {
-              await Promise.all(result.keys.map(async (key) => {
-                const data = await window.storage.get(key);
-                if (data) storageEntries[key] = data.value;
-              }));
-            }
-          }
-          for (const key of exactKeys) {
-            const data = await window.storage.get(key);
-            if (data) storageEntries[key] = data.value;
+          const allKeys = await window.storage.list('');
+          if (allKeys && allKeys.keys) {
+            await Promise.all(allKeys.keys.map(async (key) => {
+              const data = await window.storage.get(key);
+              if (data) storageEntries[key] = data.value;
+            }));
           }
 
-          const lsKeys = [
-            'justlator-paper-draft',
-            'justlator-bib-format',
-            'justlator-export-citation-style',
-            'justlator-text-dir',
-          ];
           const localStorageEntries = {};
-          for (const key of lsKeys) {
+          for (const key of LS_BACKUP_KEYS) {
             const val = localStorage.getItem(key);
             if (val !== null) localStorageEntries[key] = val;
           }
@@ -703,22 +695,43 @@
             setTimeout(() => setBackupImportStatus(''), 4000);
             return;
           }
-          if (!payload.version || !payload.storageEntries) {
+          if (
+            !payload.version ||
+            !payload.storageEntries ||
+            typeof payload.storageEntries !== 'object' ||
+            Array.isArray(payload.storageEntries)
+          ) {
             setBackupImportStatus('invalid');
             setTimeout(() => setBackupImportStatus(''), 4000);
             return;
           }
           const ok = window.confirm(
-            `This will overwrite ALL existing data (Knowledge Base, Glossary, Papers, Settings) with the backup from ${payload.exportedAt ? new Date(payload.exportedAt).toLocaleString() : 'unknown date'}.\n\nContinue?`
+            `This will REPLACE ALL existing data (Knowledge Base, Glossary, Papers, Settings) with the backup from ${payload.exportedAt ? new Date(payload.exportedAt).toLocaleString() : 'unknown date'}.\n\nContinue?`
           );
           if (!ok) { setBackupImportStatus(''); return; }
           setBackupImportStatus('restoring');
+
+          // Clear all existing window.storage keys before restore
+          const existing = await window.storage.list('');
+          if (existing && existing.keys) {
+            await Promise.all(existing.keys.map(key => window.storage.delete(key)));
+          }
+          // Clear all tracked localStorage keys
+          for (const key of LS_BACKUP_KEYS) {
+            localStorage.removeItem(key);
+          }
+
+          // Write backup entries
           for (const [key, value] of Object.entries(payload.storageEntries)) {
             await window.storage.set(key, value);
           }
-          for (const [key, value] of Object.entries(payload.localStorageEntries || {})) {
-            localStorage.setItem(key, value);
+          const lsEntries = payload.localStorageEntries;
+          if (lsEntries && typeof lsEntries === 'object' && !Array.isArray(lsEntries)) {
+            for (const [key, value] of Object.entries(lsEntries)) {
+              localStorage.setItem(key, value);
+            }
           }
+
           window.location.reload();
         } catch(e) {
           setBackupImportStatus('error');
