@@ -4,10 +4,14 @@ import anthropic
 import os
 import time
 import json
+import logging
 import threading
 import urllib.request
 import urllib.parse
 from collections import defaultdict
+
+logging.basicConfig(level=logging.WARNING)
+_log = logging.getLogger(__name__)
 
 # ── Static file protection ──────────────────────────────────────────────────
 # Do NOT set static_folder to '.' (repo root) — that would expose server.py,
@@ -84,7 +88,8 @@ def _db_get(key: str) -> str | None:
         url = f'{_REPLIT_DB_URL}/{urllib.parse.quote(key, safe="")}'
         with urllib.request.urlopen(url, timeout=3) as r:
             return r.read().decode('utf-8')
-    except Exception:
+    except Exception as exc:
+        _log.warning('Replit DB get(%r) failed: %s', key, exc)
         return None
 
 
@@ -97,7 +102,8 @@ def _db_set(key: str, value: str) -> bool:
         req = urllib.request.Request(_REPLIT_DB_URL, data=payload, method='POST')
         with urllib.request.urlopen(req, timeout=3) as r:
             return r.status == 200
-    except Exception:
+    except Exception as exc:
+        _log.warning('Replit DB set(%r) failed: %s', key, exc)
         return False
 
 
@@ -113,31 +119,45 @@ def _load_user_stats() -> dict:
         raw = _db_get(_USER_STATS_DB_KEY)
         if raw:
             try:
-                return json.loads(raw)
-            except json.JSONDecodeError:
-                pass
-        # Replit DB is available but key is absent — check if the file has data
-        # to migrate (happens the first time after switching to DB storage).
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return parsed
+                _log.warning('Replit DB %r has unexpected shape (%s); ignoring', _USER_STATS_DB_KEY, type(parsed).__name__)
+            except json.JSONDecodeError as exc:
+                _log.warning('Replit DB %r JSON decode error: %s', _USER_STATS_DB_KEY, exc)
+        # Replit DB available but key absent (or corrupt) — check the file for
+        # data to migrate (first run after switching to DB storage).
         try:
             with open(_USER_STATS_FILE, 'r') as f:
                 migrated = json.load(f)
-            if migrated:
+            if isinstance(migrated, dict) and migrated:
                 _db_set(_USER_STATS_DB_KEY, json.dumps(migrated))
-            return migrated
+            return migrated if isinstance(migrated, dict) else {}
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
     # Local dev fallback: read from file.
     try:
         with open(_USER_STATS_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
 
 
 def _save_user_stats(data: dict) -> None:
-    """Persist all per-user stats to Replit DB when available, else to file."""
+    """Persist all per-user stats to Replit DB when available, else to file.
+
+    If the DB write fails, falls back to the local file as a best-effort
+    safety net so stats are not silently lost during transient DB outages.
+    """
     if _REPLIT_DB_URL:
-        _db_set(_USER_STATS_DB_KEY, json.dumps(data))
+        if not _db_set(_USER_STATS_DB_KEY, json.dumps(data)):
+            _log.warning('Replit DB write failed; writing user_stats to file as fallback')
+            try:
+                with open(_USER_STATS_FILE, 'w') as f:
+                    json.dump(data, f)
+            except OSError as exc:
+                _log.warning('Fallback file write also failed: %s', exc)
     else:
         with open(_USER_STATS_FILE, 'w') as f:
             json.dump(data, f)
