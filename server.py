@@ -99,7 +99,10 @@ def track():
             stats['visits'] += 1
         elif event == 'paper':
             stats['papersGenerated'] += 1
-            words = int(data.get('words') or 0)
+            try:
+                words = max(0, int(data.get('words') or 0))
+            except (ValueError, TypeError):
+                words = 0
             if words > 0:
                 stats['wordsProduced'] += words
         elif event == 'source':
