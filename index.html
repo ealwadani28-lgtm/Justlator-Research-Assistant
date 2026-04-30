@@ -388,6 +388,9 @@
       const [librarySaveStatus, setLibrarySaveStatus] = useState('');
       const [renamingPaperId, setRenamingPaperId] = useState(null);
       const [renamePaperTitle, setRenamePaperTitle] = useState('');
+      const [backupStatus, setBackupStatus] = useState('');
+      const [backupImportStatus, setBackupImportStatus] = useState('');
+      const backupFileInputRef = useRef(null);
       const paperDraftFirstRender = useRef(true);
       const skipNextDraftSaveRef = useRef(false);
       const paperOutputRef = useRef(null);
@@ -630,6 +633,97 @@
           setRenamingPaperId(null);
           setRenamePaperTitle('');
         } catch(e) {}
+      };
+      // ── Data Backup ──────────────────────────────────────────────────────────
+      const exportBackup = async () => {
+        if (!window.storage) return;
+        setBackupStatus('exporting');
+        try {
+          const prefixes = ['source:', 'chunks:', 'glossary:', 'settings:', 'paper:'];
+          const exactKeys = ['paper-index', 'usage-stats'];
+          const storageEntries = {};
+
+          for (const prefix of prefixes) {
+            const result = await window.storage.list(prefix);
+            if (result && result.keys) {
+              await Promise.all(result.keys.map(async (key) => {
+                const data = await window.storage.get(key);
+                if (data) storageEntries[key] = data.value;
+              }));
+            }
+          }
+          for (const key of exactKeys) {
+            const data = await window.storage.get(key);
+            if (data) storageEntries[key] = data.value;
+          }
+
+          const lsKeys = [
+            'justlator-paper-draft',
+            'justlator-bib-format',
+            'justlator-export-citation-style',
+            'justlator-text-dir',
+          ];
+          const localStorageEntries = {};
+          for (const key of lsKeys) {
+            const val = localStorage.getItem(key);
+            if (val !== null) localStorageEntries[key] = val;
+          }
+
+          const payload = {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            storageEntries,
+            localStorageEntries,
+          };
+
+          const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          const dateStr = new Date().toISOString().slice(0, 10);
+          a.href = url;
+          a.download = `justlator-backup-${dateStr}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+          setBackupStatus('done');
+          setTimeout(() => setBackupStatus(''), 3000);
+        } catch(e) {
+          setBackupStatus('error');
+          setTimeout(() => setBackupStatus(''), 4000);
+        }
+      };
+
+      const importBackup = async (file) => {
+        if (!file || !window.storage) return;
+        setBackupImportStatus('reading');
+        try {
+          const text = await file.text();
+          let payload;
+          try { payload = JSON.parse(text); } catch(e) {
+            setBackupImportStatus('invalid');
+            setTimeout(() => setBackupImportStatus(''), 4000);
+            return;
+          }
+          if (!payload.version || !payload.storageEntries) {
+            setBackupImportStatus('invalid');
+            setTimeout(() => setBackupImportStatus(''), 4000);
+            return;
+          }
+          const ok = window.confirm(
+            `This will overwrite ALL existing data (Knowledge Base, Glossary, Papers, Settings) with the backup from ${payload.exportedAt ? new Date(payload.exportedAt).toLocaleString() : 'unknown date'}.\n\nContinue?`
+          );
+          if (!ok) { setBackupImportStatus(''); return; }
+          setBackupImportStatus('restoring');
+          for (const [key, value] of Object.entries(payload.storageEntries)) {
+            await window.storage.set(key, value);
+          }
+          for (const [key, value] of Object.entries(payload.localStorageEntries || {})) {
+            localStorage.setItem(key, value);
+          }
+          window.location.reload();
+        } catch(e) {
+          setBackupImportStatus('error');
+          setTimeout(() => setBackupImportStatus(''), 4000);
+        }
       };
       // ────────────────────────────────────────────────────────────────────────
 
@@ -1852,6 +1946,56 @@ ${conceptEntries}
                     <li>✅ <strong>Usage Tracking:</strong> Monitor your API costs in real-time</li>
                   </ul>
                 </div>
+
+                {/* Data Backup */}
+                {window.storage && (
+                  <div style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px', padding: '24px'}}>
+                    <h3 style={{fontWeight: '700', fontSize: '18px', marginBottom: '8px', color: 'var(--text-primary)'}}>🗄️ Data Backup</h3>
+                    <p style={{fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '18px', lineHeight: '1.7'}}>
+                      Keep your Knowledge Base, Glossary, saved Papers, and settings safe. Export a full backup
+                      and re-import it on any device or after a browser cache clear.
+                    </p>
+                    <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center'}}>
+                      <button
+                        onClick={exportBackup}
+                        disabled={backupStatus === 'exporting'}
+                        style={{
+                          padding: '10px 20px', borderRadius: '10px', border: 'none', cursor: backupStatus === 'exporting' ? 'default' : 'pointer',
+                          background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+                          color: 'white', fontWeight: '700', fontSize: '14px', opacity: backupStatus === 'exporting' ? 0.6 : 1
+                        }}
+                      >
+                        {backupStatus === 'exporting' ? '⏳ Exporting…' : '⬇ Export Backup'}
+                      </button>
+
+                      <button
+                        onClick={() => backupFileInputRef.current && backupFileInputRef.current.click()}
+                        disabled={backupImportStatus === 'reading' || backupImportStatus === 'restoring'}
+                        style={{
+                          padding: '10px 20px', borderRadius: '10px', border: '2px solid var(--accent-primary)',
+                          background: 'var(--bg-secondary)', color: 'var(--accent-primary)', fontWeight: '700', fontSize: '14px',
+                          cursor: (backupImportStatus === 'reading' || backupImportStatus === 'restoring') ? 'default' : 'pointer',
+                          opacity: (backupImportStatus === 'reading' || backupImportStatus === 'restoring') ? 0.6 : 1
+                        }}
+                      >
+                        {backupImportStatus === 'reading' ? '📂 Reading…' : backupImportStatus === 'restoring' ? '⏳ Restoring…' : '⬆ Import Backup'}
+                      </button>
+
+                      <input
+                        ref={backupFileInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        style={{display: 'none'}}
+                        onChange={e => { if (e.target.files[0]) { importBackup(e.target.files[0]); e.target.value = ''; } }}
+                      />
+
+                      {backupStatus === 'done' && <span style={{fontSize: '13px', color: '#16a34a', fontWeight: '600'}}>✓ Backup downloaded!</span>}
+                      {backupStatus === 'error' && <span style={{fontSize: '13px', color: '#dc2626', fontWeight: '600'}}>⚠ Export failed — try again.</span>}
+                      {backupImportStatus === 'invalid' && <span style={{fontSize: '13px', color: '#dc2626', fontWeight: '600'}}>⚠ Invalid backup file — is this a Justlator backup?</span>}
+                      {backupImportStatus === 'error' && <span style={{fontSize: '13px', color: '#dc2626', fontWeight: '600'}}>⚠ Import failed — try again.</span>}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
