@@ -7,6 +7,7 @@ Justlator — a Translation Studies Research Assistant web app with AI-powered t
 - `index.html`: Main app file (served as root). Contains the full React app, landing page, and all feature tabs.
 - `server.py`: **Flask** server (port 5000). Serves index.html and provides 7 endpoints.
 - `stats.json`: File-based global counters (visits, papersGenerated, wordsProduced, sourcesAdded). Created automatically on first use.
+- `user_stats.json`: Per-user stats fallback file (used only when `REPLIT_DB_URL` is absent, e.g. local dev). In production the data lives in Replit Database under key `user_stats`.
 - `requirements.txt`: Python dependencies — flask, anthropic, flask-cors.
 
 ## AI Integration
@@ -34,6 +35,11 @@ Justlator — a Translation Studies Research Assistant web app with AI-powered t
 - RTL/Arabic support
 
 ## Recent Changes
+- Task #51: Per-user stats now stored in Replit Database (durable across server restarts/container resets)
+  - `_load_user_stats()` / `_save_user_stats()` replace old file-only functions
+  - Replit DB (`REPLIT_DB_URL`) is used when available; falls back to `user_stats.json` for local dev
+  - One-time automatic migration: if DB key is absent but file exists, data is written to DB on first load
+  - Uses Python stdlib `urllib` — no new package dependencies
 - Task #45: Show signed-in user's name in app header
   - Added GET /api/me endpoint reading X-Replit-User-Name/Id/Profile-Image proxy headers
   - Frontend fetches /api/me on mount and stores result in replitUser state

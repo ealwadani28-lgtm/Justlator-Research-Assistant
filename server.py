@@ -5,6 +5,8 @@ import os
 import time
 import json
 import threading
+import urllib.request
+import urllib.parse
 from collections import defaultdict
 
 # ── Static file protection ──────────────────────────────────────────────────
@@ -66,13 +68,65 @@ _STATS_FILE = 'stats.json'
 _STATS_LOCK = threading.Lock()
 _STATS_DEFAULTS = {'visits': 0, 'papersGenerated': 0, 'wordsProduced': 0, 'sourcesAdded': 0}
 
-# ── Per-user stats (file-based, keyed by Replit user ID) ─────────────────────
+# ── Replit Database helpers (persists across container resets) ────────────────
+# REPLIT_DB_URL is injected by the Replit runtime. When absent (local dev) all
+# _db_* calls are no-ops and we fall back to the JSON file.
+_REPLIT_DB_URL = os.environ.get('REPLIT_DB_URL', '').rstrip('/')
+
+_USER_STATS_DB_KEY = 'user_stats'
+
+
+def _db_get(key: str) -> str | None:
+    """GET a single key from Replit Database. Returns raw string or None."""
+    if not _REPLIT_DB_URL:
+        return None
+    try:
+        url = f'{_REPLIT_DB_URL}/{urllib.parse.quote(key, safe="")}'
+        with urllib.request.urlopen(url, timeout=3) as r:
+            return r.read().decode('utf-8')
+    except Exception:
+        return None
+
+
+def _db_set(key: str, value: str) -> bool:
+    """POST a key=value pair to Replit Database. Returns True on success."""
+    if not _REPLIT_DB_URL:
+        return False
+    try:
+        payload = urllib.parse.urlencode({key: value}).encode('utf-8')
+        req = urllib.request.Request(_REPLIT_DB_URL, data=payload, method='POST')
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+# ── Per-user stats (Replit DB primary, JSON file fallback) ────────────────────
 _USER_STATS_FILE = 'user_stats.json'
 _USER_STATS_LOCK = threading.Lock()
 _USER_STATS_DEFAULTS = {'papersGenerated': 0, 'wordsProduced': 0, 'tokensUsed': 0}
 
 
-def _load_user_stats_file() -> dict:
+def _load_user_stats() -> dict:
+    """Load all per-user stats. Prefers Replit DB; falls back to local file."""
+    if _REPLIT_DB_URL:
+        raw = _db_get(_USER_STATS_DB_KEY)
+        if raw:
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+        # Replit DB is available but key is absent — check if the file has data
+        # to migrate (happens the first time after switching to DB storage).
+        try:
+            with open(_USER_STATS_FILE, 'r') as f:
+                migrated = json.load(f)
+            if migrated:
+                _db_set(_USER_STATS_DB_KEY, json.dumps(migrated))
+            return migrated
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return {}
+    # Local dev fallback: read from file.
     try:
         with open(_USER_STATS_FILE, 'r') as f:
             return json.load(f)
@@ -80,26 +134,30 @@ def _load_user_stats_file() -> dict:
         return {}
 
 
-def _save_user_stats_file(data: dict) -> None:
-    with open(_USER_STATS_FILE, 'w') as f:
-        json.dump(data, f)
+def _save_user_stats(data: dict) -> None:
+    """Persist all per-user stats to Replit DB when available, else to file."""
+    if _REPLIT_DB_URL:
+        _db_set(_USER_STATS_DB_KEY, json.dumps(data))
+    else:
+        with open(_USER_STATS_FILE, 'w') as f:
+            json.dump(data, f)
 
 
 def _get_user_stats(user_id: str) -> dict:
-    all_stats = _load_user_stats_file()
+    all_stats = _load_user_stats()
     return {**_USER_STATS_DEFAULTS, **all_stats.get(user_id, {})}
 
 
 def _update_user_stats(user_id: str, **increments) -> dict:
     """Atomically increment per-user counters and return updated stats."""
     with _USER_STATS_LOCK:
-        all_stats = _load_user_stats_file()
+        all_stats = _load_user_stats()
         user = {**_USER_STATS_DEFAULTS, **all_stats.get(user_id, {})}
         for key, value in increments.items():
             if key in _USER_STATS_DEFAULTS:
                 user[key] = user.get(key, 0) + value
         all_stats[user_id] = user
-        _save_user_stats_file(all_stats)
+        _save_user_stats(all_stats)
         return user
 
 
