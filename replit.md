@@ -1,7 +1,7 @@
-# Replit Justlator
+# Replit Justlator Research Assistant
 
 ## Overview
-Justlator — a Translation Studies Research Assistant web app with AI-powered tools for academic researchers.
+Justlator Research Assistant — a Translation Studies Research Assistant web app with AI-powered tools for academic researchers.
 
 ## Project Architecture
 - `index.html`: Main app file (served as root). Contains the full React app, landing page, and all feature tabs.
