@@ -381,6 +381,11 @@
       const [wordCount, setWordCount] = useState(0);
       const [pageCount, setPageCount] = useState(0);
       const [draftStatus, setDraftStatus] = useState('');
+      const [paperLibrary, setPaperLibrary] = useState([]);
+      const [showLibrary, setShowLibrary] = useState(false);
+      const [showSaveModal, setShowSaveModal] = useState(false);
+      const [saveTitle, setSaveTitle] = useState('');
+      const [librarySaveStatus, setLibrarySaveStatus] = useState('');
       const paperDraftFirstRender = useRef(true);
       const skipNextDraftSaveRef = useRef(false);
       const paperOutputRef = useRef(null);
@@ -545,6 +550,67 @@
         setBibAppended(false);
       };
 
+      // ── Paper Library ────────────────────────────────────────────────────────
+      const loadPaperLibrary = async () => {
+        try {
+          const result = await window.storage.get('paper-index');
+          if (result && result.value) {
+            setPaperLibrary(JSON.parse(result.value));
+          }
+        } catch(e) {}
+      };
+
+      const saveCurrentPaper = async (title) => {
+        if (!title.trim()) return;
+        setLibrarySaveStatus('saving');
+        try {
+          const id = Date.now().toString();
+          const entry = {
+            id, title: title.trim(),
+            topic: paperTopic, section: paperSection,
+            notes: paperNotes, content: generatedPaper,
+            wordCount, savedAt: new Date().toISOString()
+          };
+          await window.storage.set(`paper:${id}`, JSON.stringify(entry));
+          const newIndex = [{ id, title: entry.title, wordCount, savedAt: entry.savedAt }, ...paperLibrary];
+          await window.storage.set('paper-index', JSON.stringify(newIndex));
+          setPaperLibrary(newIndex);
+          setLibrarySaveStatus('saved');
+          setShowSaveModal(false);
+          setSaveTitle('');
+          setTimeout(() => setLibrarySaveStatus(''), 2500);
+        } catch(e) {
+          setLibrarySaveStatus('error');
+          setTimeout(() => setLibrarySaveStatus(''), 3000);
+        }
+      };
+
+      const loadSavedPaper = async (id) => {
+        try {
+          const result = await window.storage.get(`paper:${id}`);
+          if (result && result.value) {
+            const paper = JSON.parse(result.value);
+            skipNextDraftSaveRef.current = true;
+            setPaperTopic(paper.topic || '');
+            setPaperSection(paper.section || 'introduction');
+            setPaperNotes(paper.notes || '');
+            setGeneratedPaper(paper.content || '');
+            setBibAppended(false);
+            setShowLibrary(false);
+          }
+        } catch(e) {}
+      };
+
+      const deleteSavedPaper = async (id) => {
+        try {
+          await window.storage.delete(`paper:${id}`);
+          const newIndex = paperLibrary.filter(p => p.id !== id);
+          await window.storage.set('paper-index', JSON.stringify(newIndex));
+          setPaperLibrary(newIndex);
+        } catch(e) {}
+      };
+      // ────────────────────────────────────────────────────────────────────────
+
       // Check server-side API key config on mount
       useEffect(() => {
         fetch('/api/config', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
@@ -706,6 +772,7 @@
           loadKnowledgeBase();
           loadUsageStats();
           loadGlossary();
+          loadPaperLibrary();
         } else {
           setLoadingKB(false);
           setLoadingGlossary(false);
@@ -2524,7 +2591,7 @@ ${conceptEntries}
           <div>
             <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '24px'}}>
               <h2 className="text-3xl font-bold" style={{color: 'var(--accent-primary)'}}>📝 Paper Writer</h2>
-              <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
                 {draftStatus === 'restored' && (
                   <span style={{fontSize: '13px', fontWeight: '600', color: 'var(--accent-primary)', background: 'rgba(126,161,252,0.12)', border: '1px solid var(--accent-primary)', borderRadius: '6px', padding: '4px 10px', transition: 'opacity 0.3s'}}>
                     📂 Draft restored
@@ -2535,11 +2602,38 @@ ${conceptEntries}
                     ✓ Draft saved
                   </span>
                 )}
+                {librarySaveStatus === 'saved' && (
+                  <span style={{fontSize: '13px', fontWeight: '600', color: '#16a34a', background: 'rgba(22,163,74,0.1)', border: '1px solid #16a34a', borderRadius: '6px', padding: '4px 10px'}}>
+                    ✓ Saved to library
+                  </span>
+                )}
+                {librarySaveStatus === 'error' && (
+                  <span style={{fontSize: '13px', fontWeight: '600', color: '#dc2626', background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: '6px', padding: '4px 10px'}}>
+                    ⚠ Save failed
+                  </span>
+                )}
+                {typeof window.storage !== 'undefined' && (
+                  <>
+                    <button
+                      onClick={() => { setSaveTitle(paperTopic || ''); setShowSaveModal(true); }}
+                      disabled={!generatedPaper && !paperTopic}
+                      style={{fontSize: '13px', fontWeight: '600', color: 'white', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', border: 'none', borderRadius: '8px', padding: '6px 14px', cursor: (!generatedPaper && !paperTopic) ? 'default' : 'pointer', opacity: (!generatedPaper && !paperTopic) ? 0.5 : 1}}
+                    >
+                      💾 Save Paper
+                    </button>
+                    <button
+                      onClick={() => setShowLibrary(true)}
+                      style={{fontSize: '13px', fontWeight: '600', color: 'var(--accent-primary)', background: 'rgba(126,161,252,0.12)', border: '2px solid var(--accent-primary)', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer'}}
+                    >
+                      📂 My Papers {paperLibrary.length > 0 ? `(${paperLibrary.length})` : ''}
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={clearDraft}
                   style={{fontSize: '13px', fontWeight: '600', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', border: '2px solid var(--border-color)', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer'}}
                 >
-                  🗑 Clear Draft
+                  🗑 Clear
                 </button>
               </div>
             </div>
@@ -3062,6 +3156,98 @@ ${conceptEntries}
           © 2026 Justlator • Built with Claude (Anthropic AI) • Translation Studies Research Assistant
         </p>
       </footer>
+
+      {/* Save Paper Modal */}
+      {showSaveModal && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowSaveModal(false); } }}
+          style={{position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'}}
+        >
+          <div style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '440px', boxShadow: 'var(--shadow)'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
+              <h3 style={{fontSize: '20px', fontWeight: '800', margin: 0}}>💾 Save Paper to Library</h3>
+              <button onClick={() => setShowSaveModal(false)} style={{background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: 'var(--text-secondary)', lineHeight: 1}}>×</button>
+            </div>
+            <label style={{display: 'block', fontWeight: '700', fontSize: '13px', marginBottom: '8px'}}>Paper Title</label>
+            <input
+              autoFocus
+              value={saveTitle}
+              onChange={e => setSaveTitle(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && saveTitle.trim()) saveCurrentPaper(saveTitle); }}
+              placeholder="Give this paper a name..."
+              style={{width: '100%', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box', marginBottom: '16px'}}
+            />
+            <div style={{display: 'flex', gap: '10px', justifyContent: 'flex-end'}}>
+              <button onClick={() => setShowSaveModal(false)} style={{padding: '9px 20px', borderRadius: '8px', border: '2px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', fontWeight: '600', cursor: 'pointer', fontSize: '14px'}}>Cancel</button>
+              <button
+                onClick={() => saveCurrentPaper(saveTitle)}
+                disabled={!saveTitle.trim() || librarySaveStatus === 'saving'}
+                style={{padding: '9px 20px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', fontWeight: '700', fontSize: '14px', cursor: saveTitle.trim() ? 'pointer' : 'default', opacity: saveTitle.trim() ? 1 : 0.5}}
+              >
+                {librarySaveStatus === 'saving' ? 'Saving…' : '💾 Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* My Papers Library Modal */}
+      {showLibrary && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setShowLibrary(false); }}
+          style={{position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'}}
+        >
+          <div style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '600px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow)'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0}}>
+              <div>
+                <h3 style={{fontSize: '20px', fontWeight: '800', margin: 0}}>📂 My Papers</h3>
+                {paperLibrary.length > 0 && <p style={{fontSize: '13px', color: 'var(--text-secondary)', margin: '4px 0 0'}}>{paperLibrary.length} paper{paperLibrary.length !== 1 ? 's' : ''} saved</p>}
+              </div>
+              <button onClick={() => setShowLibrary(false)} style={{background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: 'var(--text-secondary)', lineHeight: 1}}>×</button>
+            </div>
+            <div style={{overflowY: 'auto', flex: 1}}>
+              {paperLibrary.length === 0 ? (
+                <div style={{textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)'}}>
+                  <div style={{fontSize: '48px', marginBottom: '12px'}}>📄</div>
+                  <p style={{fontSize: '15px', fontWeight: '600', marginBottom: '6px'}}>No saved papers yet</p>
+                  <p style={{fontSize: '13px'}}>Generate a section and click "💾 Save Paper" to build your library.</p>
+                </div>
+              ) : (
+                <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
+                  {paperLibrary.map(paper => (
+                    <div key={paper.id} style={{padding: '14px 16px', border: '2px solid var(--border-color)', borderRadius: '12px', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap'}}>
+                      <div style={{flex: 1, minWidth: 0}}>
+                        <p style={{fontWeight: '700', fontSize: '14px', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)'}}>{paper.title}</p>
+                        <p style={{fontSize: '12px', color: 'var(--text-secondary)', margin: '3px 0 0'}}>
+                          {paper.wordCount > 0 ? `${paper.wordCount.toLocaleString()} words · ` : ''}
+                          {new Date(paper.savedAt).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})}
+                        </p>
+                      </div>
+                      <div style={{display: 'flex', gap: '8px', flexShrink: 0}}>
+                        <button
+                          onClick={() => {
+                            if (generatedPaper && !window.confirm('Loading this paper will replace your current draft. Continue?')) return;
+                            loadSavedPaper(paper.id);
+                          }}
+                          style={{padding: '6px 14px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', color: 'white', fontWeight: '600', fontSize: '13px', cursor: 'pointer'}}
+                        >
+                          ↩ Load
+                        </button>
+                        <button
+                          onClick={() => { if (window.confirm('Delete this paper from the library?')) deleteSavedPaper(paper.id); }}
+                          style={{padding: '6px 10px', borderRadius: '8px', border: '2px solid #fca5a5', background: 'rgba(239,68,68,0.07)', color: '#dc2626', fontWeight: '600', fontSize: '13px', cursor: 'pointer'}}
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Source Modal */}
       {editingSourceId && editSource && (
