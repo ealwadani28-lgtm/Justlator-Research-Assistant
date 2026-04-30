@@ -116,6 +116,21 @@ def index():
     return send_file('index.html')
 
 
+@app.route('/api/me', methods=['GET'])
+def me():
+    """Return the authenticated Replit user's name, id, and profile image.
+
+    Reads proxy-injected headers that cannot be spoofed by external callers.
+    Returns empty strings when running outside Replit's proxy or when the
+    user is not signed in.
+    """
+    return jsonify({
+        'name':         request.headers.get('X-Replit-User-Name', '').strip(),
+        'id':           request.headers.get('X-Replit-User-Id', '').strip(),
+        'profileImage': request.headers.get('X-Replit-User-Profile-Image', '').strip(),
+    })
+
+
 @app.route('/api/config', methods=['GET'])
 def config():
     """Tell the frontend whether the server-side API key is usable.

@@ -5,12 +5,13 @@ Justlator — a Translation Studies Research Assistant web app with AI-powered t
 
 ## Project Architecture
 - `index.html`: Main app file (served as root). Contains the full React app, landing page, and all feature tabs.
-- `server.py`: **Flask** server (port 5000). Serves index.html and provides 6 endpoints.
+- `server.py`: **Flask** server (port 5000). Serves index.html and provides 7 endpoints.
 - `stats.json`: File-based global counters (visits, papersGenerated, wordsProduced, sourcesAdded). Created automatically on first use.
 - `requirements.txt`: Python dependencies — flask, anthropic, flask-cors.
 
 ## AI Integration
 - server.py provides:
+  - `GET /api/me` — returns Replit-authenticated user's name, id, and profile image from proxy headers
   - `GET /api/config` — tells frontend if server has `ANTHROPIC_API_KEY` set
   - `POST /api/humanize` — humanizes AI-generated academic text
   - `POST /api/write` — generates paper sections using Knowledge Base sources as context
@@ -33,6 +34,11 @@ Justlator — a Translation Studies Research Assistant web app with AI-powered t
 - RTL/Arabic support
 
 ## Recent Changes
+- Task #45: Show signed-in user's name in app header
+  - Added GET /api/me endpoint reading X-Replit-User-Name/Id/Profile-Image proxy headers
+  - Frontend fetches /api/me on mount and stores result in replitUser state
+  - When signed in: avatar chip (initials circle or profile image) + "Hi, [name]" shown in header next to theme switcher
+  - When anonymous (no headers): nothing is shown
 - Task #15: Connected all 3 AI tools to real Claude API via Flask backend proxy
   - server.py upgraded from SimpleHTTPRequestHandler to Flask
   - Hybrid key model: ANTHROPIC_API_KEY env var takes priority; falls back to user-provided key

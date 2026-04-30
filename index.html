@@ -367,6 +367,7 @@
       const [knowledgeBase, setKnowledgeBase] = useState([]);
       const [loading, setLoading] = useState(false);
       const [serverHasKey, setServerHasKey] = useState(false);
+      const [replitUser, setReplitUser] = useState({ name: '', id: '', profileImage: '' });
       const [claudeApiKey, setClaudeApiKey] = useState(() => {
         try { return sessionStorage.getItem('justlator-claude-key') || ''; } catch(e) { return ''; }
       });
@@ -791,6 +792,9 @@
             setServerHasKey(true);
             setClaudeApiKey('__server__');
           }
+        }).catch(() => {});
+        fetch('/api/me', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
+          if (d && d.name) setReplitUser({ name: d.name, id: d.id || '', profileImage: d.profileImage || '' });
         }).catch(() => {});
         trackEvent('visit');
         fetchGlobalStats();
@@ -1942,6 +1946,24 @@ ${conceptEntries}
                   <option value="summer-bright">☀️ Summer</option>
                   <option value="neon-tech">⚡ Winter</option>
                 </select>
+                {replitUser.name && (
+                  <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                    {replitUser.profileImage ? (
+                      <img
+                        src={replitUser.profileImage}
+                        alt={replitUser.name}
+                        style={{width: '32px', height: '32px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.5)', objectFit: 'cover'}}
+                      />
+                    ) : (
+                      <div style={{width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.3)', border: '2px solid rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '14px', color: 'white', flexShrink: 0}}>
+                        {replitUser.name.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <span style={{fontSize: '14px', fontWeight: '600', color: 'white', whiteSpace: 'nowrap'}}>
+                      Hi, {replitUser.name}
+                    </span>
+                  </div>
+                )}
                 <button
                   onClick={() => setTextDir(d => d === 'ltr' ? 'rtl' : 'ltr')}
                   title={textDir === 'ltr' ? 'Switch to RTL (Right-to-Left) for Arabic/Hebrew text' : 'Switch to LTR (Left-to-Right)'}
