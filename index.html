@@ -1946,7 +1946,7 @@ ${conceptEntries}
                   <option value="summer-bright">☀️ Summer</option>
                   <option value="neon-tech">⚡ Winter</option>
                 </select>
-                {replitUser.name && (
+                {replitUser.name ? (
                   <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
                     {replitUser.profileImage ? (
                       <img
@@ -1963,6 +1963,13 @@ ${conceptEntries}
                       Hi, {replitUser.name}
                     </span>
                   </div>
+                ) : (
+                  <button
+                    onClick={() => window.open(`https://replit.com/auth_with_repl_site?domain=${window.location.hostname}`, '_blank', 'width=500,height=600')}
+                    style={{padding: '8px 16px', background: 'rgba(255,255,255,0.2)', border: '2px solid rgba(255,255,255,0.5)', borderRadius: '8px', color: 'white', fontWeight: '600', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap', letterSpacing: '0.3px'}}
+                  >
+                    Sign in
+                  </button>
                 )}
                 <button
                   onClick={() => setTextDir(d => d === 'ltr' ? 'rtl' : 'ltr')}
