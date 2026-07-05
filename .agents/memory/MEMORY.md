@@ -1,0 +1,1 @@
+- [GitHub push auth](github-push-auth.md) — origin remote's stored credential can silently go stale; verify token via GitHub API before/while pushing, don't just retry git push blindly.
