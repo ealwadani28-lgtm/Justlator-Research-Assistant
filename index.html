@@ -417,6 +417,14 @@
       const [backupStatus, setBackupStatus] = useState('');
       const [backupImportStatus, setBackupImportStatus] = useState('');
       const backupFileInputRef = useRef(null);
+      const [showRestoreModal, setShowRestoreModal] = useState(false);
+      const [pendingBackupPayload, setPendingBackupPayload] = useState(null);
+      const [restoreSelection, setRestoreSelection] = useState({
+        knowledgeBase: true,
+        glossary: true,
+        papers: true,
+        settings: true,
+      });
       const [globalStats, setGlobalStats] = useState({ visits: 0, papersGenerated: 0, wordsProduced: 0, sourcesAdded: 0 });
       const [userStats, setUserStats] = useState(null);
       const paperDraftFirstRender = useRef(true);
@@ -674,6 +682,20 @@
         'justlator-text-dir',
       ];
 
+      const RESTORE_CATEGORIES = [
+        { key: 'knowledgeBase', label: 'Knowledge Base', hint: 'Sources & extracted content' },
+        { key: 'glossary', label: 'Glossary', hint: 'Terms and glossary order' },
+        { key: 'papers', label: 'Saved Papers', hint: 'Papers saved to your library' },
+        { key: 'settings', label: 'Settings / Preferences', hint: 'Drafts, formats, usage stats' },
+      ];
+
+      const categorizeBackupKey = (key) => {
+        if (key.startsWith('source:') || key.startsWith('chunks:')) return 'knowledgeBase';
+        if (key.startsWith('glossary:') || key === 'settings:glossary-order') return 'glossary';
+        if (key.startsWith('paper:') || key === 'paper-index') return 'papers';
+        return 'settings';
+      };
+
       const exportBackup = async () => {
         if (!window.storage) return;
         setBackupStatus('exporting');
@@ -737,30 +759,66 @@
             setTimeout(() => setBackupImportStatus(''), 4000);
             return;
           }
-          const ok = window.confirm(
-            `This will REPLACE ALL existing data (Knowledge Base, Glossary, Papers, Settings) with the backup from ${payload.exportedAt ? new Date(payload.exportedAt).toLocaleString() : 'unknown date'}.\n\nContinue?`
-          );
-          if (!ok) { setBackupImportStatus(''); return; }
-          setBackupImportStatus('restoring');
+          setBackupImportStatus('');
+          setPendingBackupPayload(payload);
+          setRestoreSelection({ knowledgeBase: true, glossary: true, papers: true, settings: true });
+          setShowRestoreModal(true);
+        } catch(e) {
+          setBackupImportStatus('error');
+          setTimeout(() => setBackupImportStatus(''), 4000);
+        }
+      };
 
-          // Clear all existing window.storage keys before restore
+      const performRestore = async (payload, selection) => {
+        if (!payload || !window.storage) return;
+        setShowRestoreModal(false);
+        setBackupImportStatus('restoring');
+        try {
+          const includeKB = !!selection.knowledgeBase;
+          const includeGlossary = !!selection.glossary;
+          const includePapers = !!selection.papers;
+          const includeSettings = !!selection.settings;
+
+          // Clear only the categories being restored, leaving untouched ones alone
           const existing = await window.storage.list('');
           if (existing && existing.keys) {
-            await Promise.all(existing.keys.map(key => window.storage.delete(key)));
+            await Promise.all(existing.keys.map(key => {
+              const cat = categorizeBackupKey(key);
+              if (
+                (cat === 'knowledgeBase' && includeKB) ||
+                (cat === 'glossary' && includeGlossary) ||
+                (cat === 'papers' && includePapers) ||
+                (cat === 'settings' && includeSettings)
+              ) {
+                return window.storage.delete(key);
+              }
+              return Promise.resolve();
+            }));
           }
-          // Clear all tracked localStorage keys
-          for (const key of LS_BACKUP_KEYS) {
-            localStorage.removeItem(key);
+          if (includeSettings) {
+            for (const key of LS_BACKUP_KEYS) {
+              localStorage.removeItem(key);
+            }
           }
 
-          // Write backup entries
+          // Write only the selected categories from the backup
           for (const [key, value] of Object.entries(payload.storageEntries)) {
-            await window.storage.set(key, value);
+            const cat = categorizeBackupKey(key);
+            if (
+              (cat === 'knowledgeBase' && includeKB) ||
+              (cat === 'glossary' && includeGlossary) ||
+              (cat === 'papers' && includePapers) ||
+              (cat === 'settings' && includeSettings)
+            ) {
+              await window.storage.set(key, value);
+            }
           }
-          const lsEntries = payload.localStorageEntries;
-          if (lsEntries && typeof lsEntries === 'object' && !Array.isArray(lsEntries)) {
-            for (const [key, value] of Object.entries(lsEntries)) {
-              localStorage.setItem(key, value);
+          if (includeSettings) {
+            const lsEntries = payload.localStorageEntries;
+            if (lsEntries && typeof lsEntries === 'object' && !Array.isArray(lsEntries)) {
+              for (const [key, value] of Object.entries(lsEntries)) {
+                localStorage.setItem(key, value);
+              }
             }
           }
 
@@ -3534,6 +3592,70 @@ ${conceptEntries}
           © 2026 Justlator Research Assistant • Built with Claude (Anthropic AI) • Translation Studies
         </p>
       </footer>
+
+      {/* Restore Backup Modal */}
+      {showRestoreModal && pendingBackupPayload && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowRestoreModal(false); setPendingBackupPayload(null); } }}
+          style={{position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'}}
+        >
+          <div style={{background: 'var(--bg-card)', border: '2px solid var(--border-color)', borderRadius: '16px', padding: '28px', width: '100%', maxWidth: '460px', boxShadow: 'var(--shadow)'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'}}>
+              <h3 style={{fontSize: '20px', fontWeight: '800', margin: 0}}>🗄️ Restore Backup</h3>
+              <button onClick={() => { setShowRestoreModal(false); setPendingBackupPayload(null); }} style={{background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', color: 'var(--text-secondary)', lineHeight: 1}}>×</button>
+            </div>
+            <p style={{fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '18px', lineHeight: '1.6'}}>
+              Backup from {pendingBackupPayload.exportedAt ? new Date(pendingBackupPayload.exportedAt).toLocaleString() : 'unknown date'}. Choose which parts to restore — unchecked categories will be left untouched. Selected categories will be fully replaced by the backup.
+            </p>
+            <div style={{display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px'}}>
+              {RESTORE_CATEGORIES.map(cat => (
+                <label
+                  key={cat.key}
+                  style={{display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '10px 12px', border: '2px solid var(--border-color)', borderRadius: '10px', cursor: 'pointer', background: 'var(--bg-secondary)'}}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!restoreSelection[cat.key]}
+                    onChange={e => setRestoreSelection(prev => ({ ...prev, [cat.key]: e.target.checked }))}
+                    style={{marginTop: '3px', width: '16px', height: '16px', cursor: 'pointer'}}
+                  />
+                  <span>
+                    <span style={{display: 'block', fontWeight: '700', fontSize: '14px', color: 'var(--text-primary)'}}>{cat.label}</span>
+                    <span style={{display: 'block', fontSize: '12px', color: 'var(--text-secondary)'}}>{cat.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div style={{display: 'flex', gap: '10px', justifyContent: 'flex-end'}}>
+              <button
+                onClick={() => { setShowRestoreModal(false); setPendingBackupPayload(null); }}
+                style={{padding: '9px 20px', borderRadius: '8px', border: '2px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', fontWeight: '600', cursor: 'pointer', fontSize: '14px'}}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const anySelected = Object.values(restoreSelection).some(Boolean);
+                  if (!anySelected) return;
+                  const ok = window.confirm('This will REPLACE the selected categories with the data from this backup. Unselected categories will be left untouched. Continue?');
+                  if (!ok) return;
+                  performRestore(pendingBackupPayload, restoreSelection);
+                }}
+                disabled={!Object.values(restoreSelection).some(Boolean)}
+                style={{
+                  padding: '9px 20px', borderRadius: '8px', border: 'none',
+                  background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
+                  color: 'white', fontWeight: '700', fontSize: '14px',
+                  cursor: Object.values(restoreSelection).some(Boolean) ? 'pointer' : 'default',
+                  opacity: Object.values(restoreSelection).some(Boolean) ? 1 : 0.5
+                }}
+              >
+                ⬆ Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Save Paper Modal */}
       {showSaveModal && (
